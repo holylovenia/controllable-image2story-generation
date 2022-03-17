@@ -2,7 +2,7 @@
 CUDA_VISIBLE_DEVICES=0 python train.py --model_name_or_path=openai/clip-vit-base-patch32 \
    --train_manifest_path=./data/MS-COCO/annotations/captions_train2017.json \
    --valid_manifest_path=./data/MS-COCO/annotations/captions_val2017.json \
-   --test_manifest_path=./data/MS-COCO/annotations/captions_test2017.json \
+   --test_manifest_path=./data/MS-COCO/annotations/captions_val2017.json \
    --preprocessing_num_workers=16 --image_column_name=image_id --text_column_name=caption \
    --per_device_train_batch_size=16 --per_device_eval_batch_size=16 \
    --dataloader_num_workers=16 --dataloader_pin_memory --group_by_length \

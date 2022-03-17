@@ -7,11 +7,10 @@ import pandas as pd
 
 
 def pil_loader(batch):
-    with open(batch["image_path"], "rb") as f:
+    with open(batch["image_path"][0], "rb") as f:
         img = Image.open(f)
-        batch["img"] = img.convert("RGB")
+        batch["image"] = [img.convert("RGB")]
         return batch
-
 
 def load_dataset(manifest_path, num_proc, image_column_name, text_column_name):
     base_path = os.path.join(*manifest_path.split("/")[:3])
@@ -24,5 +23,5 @@ def load_dataset(manifest_path, num_proc, image_column_name, text_column_name):
     df["image_path"] = df[image_column_name].apply(lambda img_id: os.path.join(img_dir_path, f"{int(img_id):012d}.jpg"))
 
     batches = Dataset.from_pandas(df)
-    batches = batches.map(pil_loader, num_proc=num_proc)
+    batches.set_transform(pil_loader)
     return batches

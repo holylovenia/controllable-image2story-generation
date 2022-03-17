@@ -64,8 +64,9 @@ def run(model_args, data_args, training_args):
     print('Vectorize dataset...')
 
     def prepare_dataset_with_clip_embeddings(batch):
-        batch["input"] = clip_processor(text=batch["caption"], images=batch["image_path"], return_tensors="pt", padding=True)
-        batch["clip_embeddings"] = clip_model.get_image_features(**batch["input"])
+        batch["input"] = clip_processor(text=batch["caption"], images=batch["image"], return_tensors="pt")
+        pixel_values = batch["input"]["pixel_values"]
+        batch["clip_embeddings"] = clip_model.get_image_features(pixel_values)
         return batch
 
     with training_args.main_process_first(desc="dataset map preprocessing"):
@@ -73,6 +74,8 @@ def run(model_args, data_args, training_args):
             prepare_dataset_with_clip_embeddings,
             remove_columns=raw_datasets["valid"].column_names,
             num_proc=data_args.preprocessing_num_workers,
+            batched=False,
+            writer_batch_size=data_args.writer_batch_size,
             desc="preprocess datasets",
             load_from_cache_file=True,
             cache_file_names={
