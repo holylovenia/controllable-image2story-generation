@@ -3,9 +3,9 @@ CUDA_VISIBLE_DEVICES=0 python train.py --model_name_or_path=openai/clip-vit-base
    --train_manifest_path=./data/MS-COCO/annotations/captions_train2017.json \
    --valid_manifest_path=./data/MS-COCO/annotations/captions_val2017.json \
    --test_manifest_path=./data/MS-COCO/annotations/captions_val2017.json \
-   --preprocessing_num_workers=16 --image_column_name=image_id --text_column_name=caption \
-   --per_device_train_batch_size=16 --per_device_eval_batch_size=16 \
-   --dataloader_num_workers=16 --dataloader_pin_memory --group_by_length \
+   --preprocessing_num_workers=8 --image_column_name=image_id --text_column_name=caption \
+   --per_device_train_batch_size=8 --per_device_eval_batch_size=8 \
+   --dataloader_num_workers=8 --dataloader_pin_memory --group_by_length \
    --seed=14045 --num_train_epochs=100 --learning_rate=5e-5 \
    --fp16 --fp16_backend=amp \
    --logging_strategy=steps --logging_steps=10 --report_to=tensorboard \
