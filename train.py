@@ -46,13 +46,16 @@ def run(model_args, data_args, training_args):
     raw_datasets = DatasetDict()
     print('Loading train dataset...')
     raw_datasets["train"] = load_dataset(data_args.train_manifest_path, data_args.preprocessing_num_workers, 
-                                    data_args.image_column_name, data_args.text_column_name)
+                                    data_args.image_column_name, data_args.text_column_name).shard(num_shards=data_args.num_shards, index=0)
+    
     print('Loading validation dataset...')
     raw_datasets["valid"] = load_dataset(data_args.valid_manifest_path, data_args.preprocessing_num_workers, 
-                                    data_args.image_column_name, data_args.text_column_name)
+                                    data_args.image_column_name, data_args.text_column_name).shard(num_shards=data_args.num_shards, index=0)
     print('Loading test dataset...')
     raw_datasets["test"] = load_dataset(data_args.test_manifest_path, data_args.preprocessing_num_workers, 
-                                    data_args.image_column_name, data_args.text_column_name)
+                                    data_args.image_column_name, data_args.text_column_name).shard(num_shards=data_args.num_shards, index=0)
+
+    print(len(raw_datasets["train"]), len(raw_datasets["valid"]), len(raw_datasets["test"]))
 
     print('Preprocess dataset...')
 
@@ -64,9 +67,9 @@ def run(model_args, data_args, training_args):
     print('Vectorize dataset...')
 
     def prepare_dataset_with_clip_embeddings(batch):
-        batch["input"] = clip_processor(text=batch["caption"], images=batch["image"], return_tensors="pt")
-        pixel_values = batch["input"]["pixel_values"]
-        batch["clip_embeddings"] = clip_model.get_image_features(pixel_values)
+        input = clip_processor(text=batch["caption"], images=batch["image"], return_tensors="pt")
+        batch["input_ids"], batch["pixel_values"] = input["input_ids"], input["pixel_values"]
+        batch["clip_embeddings"] = clip_model.get_image_features(batch["pixel_values"])
         return batch
 
     with training_args.main_process_first(desc="dataset map preprocessing"):
