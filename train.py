@@ -5,10 +5,11 @@ from args_helper import (
 )
 from datasets import load_from_disk, load_metric, set_caching_enabled, DatasetDict
 from data_utils import load_dataset
+from models import ClipCaptionModel
 from transformers import (
     set_seed,
-    CLIPProcessor,
-    CLIPModel,
+    GPT2Tokenizer,
+    GPT2LMHeadModel,
     EarlyStoppingCallback,
     HfArgumentParser,
     Trainer
@@ -43,52 +44,93 @@ def run(model_args, data_args, training_args):
     ###
     # Prepare Dataset
     ###
-    raw_datasets = DatasetDict()
-    print('Loading train dataset...')
-    raw_datasets["train"] = load_dataset(data_args.train_manifest_path, data_args.preprocessing_num_workers, 
-                                    data_args.image_column_name, data_args.text_column_name, embedding_generator=model_args.model_name_or_path)
-    print('Loading validation dataset...')
-    raw_datasets["valid"] = load_dataset(data_args.valid_manifest_path, data_args.preprocessing_num_workers, 
-                                    data_args.image_column_name, data_args.text_column_name, embedding_generator=model_args.model_name_or_path)
-    print('Loading test dataset...')
-    raw_datasets["test"] = load_dataset(data_args.test_manifest_path, data_args.preprocessing_num_workers, 
-                                    data_args.image_column_name, data_args.text_column_name, embedding_generator=model_args.model_name_or_path)
+    preprocessed_datasets = DatasetDict()
+    print('Loading train, validation, test dataset...')
+    preprocessed_datasets = load_dataset(cache_dir_path)
 
     print('Preprocess dataset...')
 
     # Load model and processor
-    clip_model = CLIPModel.from_pretrained(model_args.model_name_or_path)
-    clip_processor = CLIPProcessor.from_pretrained(model_args.model_name_or_path)
+    tokenizer = GPT2Tokenizer.from_pretrained(model_args.model_name_or_path)
 
     # Preprocess image sample and label text
     print('Vectorize dataset...')
 
-    def prepare_dataset_with_clip_embeddings(batch):
-        input = clip_processor(text=batch["caption"], images=batch["image"], return_tensors="pt")
-        batch["input_ids"] = input["input_ids"]
-        batch["pixel_values"] = input["pixel_values"]
-        batch["clip_embeddings"] = clip_model.get_image_features(batch["pixel_values"], return_dict=True)
-        return batch
+    def tokenize(batch):
+        input = tokenizer(text=batch["caption"], return_tensors="pt")
+        input["clip_embeddings"] = batch["clip_embeddings"]
+        return input
 
-    with training_args.main_process_first(desc="dataset map preprocessing"):
-        vectorized_datasets = raw_datasets.map(
-            prepare_dataset_with_clip_embeddings,
-            remove_columns=raw_datasets["valid"].column_names,
+    with training_args.main_process_first(desc="dataset tokenization"):
+        preprocessed_datasets = preprocessed_datasets.map(
+            tokenize,
             num_proc=data_args.preprocessing_num_workers,
             batched=False,
             writer_batch_size=data_args.writer_batch_size,
             desc="preprocess datasets",
             load_from_cache_file=True,
             cache_file_names={
-                "train": "{}/train_clip.arrow".format(cache_dir_path),
-                "valid": "{}/valid_clip.arrow".format(cache_dir_path),
-                "test": "{}/test_clip.arrow".format(cache_dir_path),
+                "train": "{}/train_tokenized.arrow".format(cache_dir_path),
+                "valid": "{}/valid_tokenized.arrow".format(cache_dir_path),
+                "test": "{}/test_tokenized.arrow".format(cache_dir_path),
             }
         )
 
     if data_args.preprocessing_only:
-        logger.info(f"Data preprocessing finished. Files cached at {vectorized_datasets.cache_files}.")
+        logger.info(f"Data preprocessing finished. Files cached at {preprocessed_datasets.cache_files}.")
         return
+
+    ###
+    # Prepare Data Collator and Trainer
+    ###
+    print('Preparing Trainer...')
+
+    print('Load model...')
+    print('Model ID', model_args.model_name_or_path)
+    model = ClipCaptionModel(model_args.prefix_length, clip_length=model_args.prefix_length_clip, prefix_size=model_args.prefix_dim)
+
+    # Initialize Trainer
+    trainer = Trainer(
+        train_dataset=preprocessed_datasets["train"],
+        eval_dataset=preprocessed_datasets["valid"],
+        model=model,
+        args=training_args,
+        compute_metrics=datasets.load_metric("bleurt"),
+        callbacks=[EarlyStoppingCallback(early_stopping_patience=5)]
+    )
+
+    ###
+    # Training Phase
+    ###
+    print('*** Training Phase ***')
+    
+    # use last checkpoint if exist
+    if os.path.isdir(model_args.model_name_or_path):
+        checkpoint = model_args.model_name_or_path
+    else:
+        checkpoint = None
+
+    train_result = trainer.train(resume_from_checkpoint=checkpoint)
+    trainer.save_model()
+
+    metrics = train_result.metrics
+    metrics["train_samples"] = len(preprocessed_datasets["train"])
+
+    trainer.log_metrics("train", metrics)
+    trainer.save_metrics("train", metrics)
+    trainer.save_state()
+    
+    ###
+    # Evaluation Phase
+    ###
+    results = {}
+    logger.info("*** Evaluation Phase ***")
+    metrics = trainer.evaluate(eval_dataset=preprocessed_datasets["valid"])
+    metrics["eval_samples"] = len(preprocessed_datasets["valid"])
+
+    trainer.log_metrics("eval", metrics)
+    trainer.save_metrics("eval", metrics)
+
 
 #####
 # Entry Point

@@ -12,6 +12,18 @@ class ModelArguments:
     model_name_or_path: Optional[str] = field(
         default="openai/clip-vit-base-patch32", metadata={"help": "The path of the HuggingFace model."}
     )
+    prefix_length: Optional[int] = field(
+        default=10,
+        metadata={"help": "Prefix length"},
+    )
+    prefix_length_clip: Optional[int] = field(
+        default=10,
+        metadata={"help": "Prefix length clip"},
+    )
+    prefix_dim: Optional[int] = field(
+        default=640,
+        metadata={"help": "Prefix dimension"},
+    )
 
 @dataclass
 class DataArguments:
