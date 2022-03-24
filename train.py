@@ -67,15 +67,14 @@ def run(model_args, data_args, training_args):
     print('Vectorize dataset...')
 
     def prepare_dataset_with_clip_embeddings(batch):
-        input = clip_processor(text=batch["caption"], images=batch["image"], return_tensors="pt")
-        batch["input_ids"], batch["pixel_values"] = input["input_ids"], input["pixel_values"]
-        batch["clip_embeddings"] = clip_model.get_image_features(batch["pixel_values"])
+        input = clip_processor(text=None, images=batch["image"], return_tensors="pt")
+        batch["clip_embeddings"] = clip_model.get_image_features(input["pixel_values"])
         return batch
 
     with training_args.main_process_first(desc="dataset map preprocessing"):
         vectorized_datasets = raw_datasets.map(
             prepare_dataset_with_clip_embeddings,
-            remove_columns=raw_datasets["valid"].column_names,
+            # remove_columns=["image_id", "id", "image_path"],
             num_proc=data_args.preprocessing_num_workers,
             batched=False,
             writer_batch_size=data_args.writer_batch_size,
@@ -87,6 +86,15 @@ def run(model_args, data_args, training_args):
                 "test": "{}/test_clip.arrow".format(cache_dir_path),
             }
         )
+
+    print('Save preprocessed dataset...')
+
+    # Remove transform function so the datasets are serializable
+    del vectorized_datasets["train"].__dict__["_format_kwargs"]["transform"]
+    del vectorized_datasets["valid"].__dict__["_format_kwargs"]["transform"]
+    del vectorized_datasets["test"].__dict__["_format_kwargs"]["transform"]
+
+    vectorized_datasets.save_to_disk("{}/preprocess_data.arrow".format(cache_dir_path))
 
     if data_args.preprocessing_only:
         logger.info(f"Data preprocessing finished. Files cached at {vectorized_datasets.cache_files}.")
