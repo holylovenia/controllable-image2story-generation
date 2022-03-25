@@ -1,19 +1,22 @@
-from datasets import Dataset
-from PIL import Image
-from transformers import (
-    AutoTokenizer
-)
-
 import datasets
-import json
-import os
 import pandas as pd
+import torch
 
 
-def _tokenize(batch, tokenizer):
-    input = tokenizer(text=batch["caption"], return_tensors="pt")
-    batch["input_ids"] = input["input_ids"]
-    return batch
+def pad_tokens(self, batch, data_args):
+        tokens = batch["input_ids"]
+        padding = self.max_seq_len - tokens.shape[0]
+        if padding > 0:
+            tokens = torch.cat((tokens, torch.zeros(padding, dtype=torch.int64) - 1))
+            batch["input_ids"] = tokens
+        elif padding < 0:
+            tokens = tokens[:self.max_seq_len]
+            batch["input_ids"] = tokens
+        mask = tokens.ge(0)  # mask is zero where we out of sequence
+        tokens[~mask] = 0
+        mask = mask.float()
+        batch["mask"] = torch.cat((torch.ones(data_args.prefix_length), mask), dim=0)  # adding prefix mask
+        return batch
 
 
 def load_dataset(dir_path):

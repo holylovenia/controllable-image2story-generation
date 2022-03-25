@@ -5,10 +5,15 @@ from args_helper import (
     TrainingArguments
 )
 from datasets import load_from_disk, load_metric, set_caching_enabled, DatasetDict
-from data_utils import load_dataset
+from data_utils import load_dataset, pad_tokens
 from models import ClipCaptionModel
+from torch.nn.functional import cross_entropy
+from tqdm import tqdm
 from transformers import (
+    get_linear_schedule_with_warmup,
     set_seed,
+    AdamW,
+    DataCollatorWithPadding,
     GPT2Tokenizer,
     GPT2LMHeadModel,
     EarlyStoppingCallback,
@@ -21,6 +26,7 @@ import datasets
 import logging
 import os
 import sys
+import torch
 import transformers
 
 
@@ -88,54 +94,55 @@ def run(model_args, data_args, training_args):
     # Prepare Data Collator and Trainer
     ###
     print('Preparing Trainer...')
+    def train(datasets: dict, model: ClipCaptionModel, model_args, training_args, output_prefix: str = "coco", device = torch.device('cuda:0')):
+        if not os.path.exists(training_args.output_dir):
+            os.makedirs(training_args.output_dir)
+            
+        model.to(device)
+        model.train()
+        optimizer = AdamW(model.parameters(), lr=training_args.learning_rate)
+        train_dataloader = torch.utils.data.DataLoader(datasets["train"], batch_size=training_args.per_device_train_batch_size,
+                                shuffle=True, drop_last=training_args.dataloader_drop_last, collate_fn=pad_tokens(data_args=data_args))
+        scheduler = get_linear_schedule_with_warmup(
+            optimizer, num_warmup_steps=training_args.warmup_steps, num_training_steps=training_args.num_train_epochs * len(train_dataloader)
+        )
+        
+        # save_config(model_args)
+        for epoch in range(int(training_args.num_train_epochs)):
+            print(f">>> Training epoch {epoch}")
+            sys.stdout.flush()
+            progress = tqdm(total=len(train_dataloader), desc=output_prefix)
+            for idx, (tokens, mask, prefix) in enumerate(train_dataloader):
+                model.zero_grad()
+                tokens, mask, prefix = tokens.to(device), mask.to(device), prefix.to(device, dtype=torch.float32)
+                outputs = model(tokens, prefix, mask)
+                logits = outputs.logits[:, model_args.prefix_length - 1: -1]
+                loss = cross_entropy(logits.reshape(-1, logits.shape[-1]), tokens.flatten(), ignore_index=0)
+                loss.backward()
+                optimizer.step()
+                scheduler.step()
+                optimizer.zero_grad()
+                progress.set_postfix({"loss": loss.item()})
+                progress.update()
+                if (idx + 1) % 10000 == 0:
+                    torch.save(
+                        model.state_dict(),
+                        os.path.join(training_args.output_dir, f"{output_prefix}_latest.pt"),
+                    )
+            progress.close()
+            if epoch % model_args.save_every == 0 or epoch == training_args.num_train_epochs - 1:
+                torch.save(
+                    model.state_dict(),
+                    os.path.join(training_args.output_dir, f"{output_prefix}-{epoch:03d}.pt"),
+                )
+        return model
 
     print('Load model...')
-    print('Model ID', model_args.model_name_or_path)
     model = ClipCaptionModel(model_args.prefix_length, clip_length=model_args.prefix_length_clip, prefix_size=model_args.prefix_dim)
 
-    # Initialize Trainer
-    trainer = Trainer(
-        train_dataset=preprocessed_datasets["train"],
-        eval_dataset=preprocessed_datasets["valid"],
-        model=model,
-        args=training_args,
-        compute_metrics=datasets.load_metric("bleu"),
-        callbacks=[EarlyStoppingCallback(early_stopping_patience=5)]
-    )
-
-    ###
-    # Training Phase
-    ###
-    print('*** Training Phase ***')
+    # Initialize training
+    train(preprocessed_datasets, model, model_args, training_args)
     
-    # use last checkpoint if exist
-    if os.path.isdir(model_args.model_name_or_path):
-        checkpoint = model_args.model_name_or_path
-    else:
-        checkpoint = None
-
-    train_result = trainer.train(resume_from_checkpoint=checkpoint)
-    trainer.save_model()
-
-    metrics = train_result.metrics
-    metrics["train_samples"] = len(preprocessed_datasets["train"])
-
-    trainer.log_metrics("train", metrics)
-    trainer.save_metrics("train", metrics)
-    trainer.save_state()
-    
-    ###
-    # Evaluation Phase
-    ###
-    results = {}
-    logger.info("*** Evaluation Phase ***")
-    metrics = trainer.evaluate(eval_dataset=preprocessed_datasets["valid"])
-    metrics["eval_samples"] = len(preprocessed_datasets["valid"])
-
-    trainer.log_metrics("eval", metrics)
-    trainer.save_metrics("eval", metrics)
-
-
 #####
 # Entry Point
 #####
