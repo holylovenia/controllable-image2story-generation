@@ -1,3 +1,4 @@
+from functools import cache
 from args_helper import (
     DataArguments,
     ModelArguments,
@@ -38,15 +39,16 @@ def run(model_args, data_args, training_args):
 
     os.makedirs(training_args.output_dir, exist_ok=True)
 
-    cache_dir_path = "./{}/{}".format(data_args.cache_dir_name, model_args.model_name_or_path)
-    os.makedirs(cache_dir_path, exist_ok=True)
+    if data_args.cache_dir_path is None:
+        data_args.cache_dir_path = "./{}/{}".format(data_args.cache_dir_name, model_args.model_name_or_path)
+    os.makedirs(data_args.cache_dir_path, exist_ok=True)
 
     ###
     # Prepare Dataset
     ###
     preprocessed_datasets = DatasetDict()
     print('Loading train, validation, test dataset...')
-    preprocessed_datasets = load_dataset(cache_dir_path)
+    preprocessed_datasets = load_dataset(data_args.cache_dir_path)
 
     print('Preprocess dataset...')
 
@@ -57,24 +59,26 @@ def run(model_args, data_args, training_args):
     print('Vectorize dataset...')
 
     def tokenize(batch):
-        input = tokenizer(text=batch["caption"], return_tensors="pt")
-        input["clip_embeddings"] = batch["clip_embeddings"]
-        return input
+        batch = tokenizer(text=batch["caption"], return_tensors="pt")
+        return batch
 
     with training_args.main_process_first(desc="dataset tokenization"):
         preprocessed_datasets = preprocessed_datasets.map(
             tokenize,
             num_proc=data_args.preprocessing_num_workers,
+            remove_columns=["image", "image_path", "caption", "id", "image_id"],
             batched=False,
             writer_batch_size=data_args.writer_batch_size,
             desc="preprocess datasets",
             load_from_cache_file=True,
             cache_file_names={
-                "train": "{}/train_tokenized.arrow".format(cache_dir_path),
-                "valid": "{}/valid_tokenized.arrow".format(cache_dir_path),
-                "test": "{}/test_tokenized.arrow".format(cache_dir_path),
+                "train": "{}/train_tokenized.arrow".format(data_args.cache_dir_path),
+                "valid": "{}/valid_tokenized.arrow".format(data_args.cache_dir_path),
+                "test": "{}/test_tokenized.arrow".format(data_args.cache_dir_path),
             }
         )
+
+    print(preprocessed_datasets["valid"].features)
 
     if data_args.preprocessing_only:
         logger.info(f"Data preprocessing finished. Files cached at {preprocessed_datasets.cache_files}.")
@@ -95,7 +99,7 @@ def run(model_args, data_args, training_args):
         eval_dataset=preprocessed_datasets["valid"],
         model=model,
         args=training_args,
-        compute_metrics=datasets.load_metric("bleurt"),
+        compute_metrics=datasets.load_metric("bleu"),
         callbacks=[EarlyStoppingCallback(early_stopping_patience=5)]
     )
 

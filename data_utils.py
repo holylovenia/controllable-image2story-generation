@@ -16,9 +16,9 @@ def _tokenize(batch, tokenizer):
     return batch
 
 
-def load_dataset(dir_path, model_args):
+def load_dataset(dir_path):
     preprocessed_dataset = datasets.load_from_disk('{}/preprocess_data.arrow'.format(dir_path))
-    # Load tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path)
-    preprocessed_dataset.set_transform(_tokenize(tokenizer))
+    # # Load tokenizer
+    # tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path)
+    # preprocessed_dataset.set_transform(_tokenize(tokenizer))
     return preprocessed_dataset

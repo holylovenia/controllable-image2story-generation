@@ -59,6 +59,10 @@ class DataArguments:
         default="cache",
         metadata={"help": "Name of cache directory"},
     )
+    cache_dir_path: Optional[str] = field(
+        default=None,
+        metadata={"help": "Path of cache directory"},
+    )
     writer_batch_size: Optional[str] = field(
         default=50,
         metadata={"help": "Number of rows per write operation for the cache file writer. This value is a good trade-off between memory usage during the processing, and processing speed. Higher value makes the processing do fewer lookups, lower value consume less temporary memory while running .map()."},
