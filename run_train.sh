@@ -3,7 +3,7 @@ CUDA_VISIBLE_DEVICES=1 python train.py \
    --model_name_or_path="gpt2" \
    --cache_dir_path="./cache/openai/clip-vit-base-patch32" \
    --preprocessing_num_workers=8 --image_column_name=image_id --text_column_name=caption \
-   --per_device_train_batch_size=8 --per_device_eval_batch_size=8 \
+   --per_device_train_batch_size=1 --per_device_eval_batch_size=1 \
    --dataloader_num_workers=8 --dataloader_pin_memory --group_by_length \
    --seed=14045 --num_train_epochs=100 --learning_rate=5e-5 \
    --fp16 --fp16_backend=amp \
