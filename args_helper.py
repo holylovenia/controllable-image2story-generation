@@ -24,6 +24,10 @@ class ModelArguments:
         default=640,
         metadata={"help": "Prefix dimension"},
     )
+    normalize_prefix: Optional[bool] = field(
+        default=True,
+        metadata={"help": "Normalize prefix."},
+    )
 
 @dataclass
 class DataArguments:

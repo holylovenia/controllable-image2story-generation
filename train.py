@@ -64,8 +64,27 @@ def run(model_args, data_args, training_args):
     # Preprocess image sample and label text
     print('Vectorize dataset...')
 
+    def pad_tokens(batch, max_seq_len=50):
+        tokens = batch["input_ids"]
+        padding = max_seq_len - tokens.shape[1]
+        if padding > 0:
+            tokens = torch.cat((tokens,
+                torch.zeros((tokens.shape[0], padding), dtype=torch.int64) - 1), dim=1)
+            batch["input_ids"] = tokens
+        elif padding < 0:
+            batch["input_ids"] = tokens[:max_seq_len]
+        mask = tokens.ge(0)  # mask is zero where we out of sequence
+        tokens[~mask] = 0
+        mask = mask.float()
+        batch["mask"] = torch.cat((torch.ones((mask.shape[0], model_args.prefix_length)), mask), dim=1)  # adding prefix mask
+        return batch
+
     def tokenize(batch):
-        batch = tokenizer(text=batch["caption"], return_tensors="pt")
+        batch["input_ids"] = tokenizer.encode(text=batch["caption"], return_tensors="pt")
+        batch = pad_tokens(batch)
+        if model_args.normalize_prefix:
+            batch["clip_embeddings"] = torch.Tensor(batch["clip_embeddings"])
+            batch["clip_embeddings"] = batch["clip_embeddings"] / batch["clip_embeddings"].norm(2, -1)
         return batch
 
     with training_args.main_process_first(desc="dataset tokenization"):
@@ -84,8 +103,6 @@ def run(model_args, data_args, training_args):
             }
         )
 
-    print(preprocessed_datasets["valid"].features)
-
     if data_args.preprocessing_only:
         logger.info(f"Data preprocessing finished. Files cached at {preprocessed_datasets.cache_files}.")
         return
@@ -102,7 +119,7 @@ def run(model_args, data_args, training_args):
         model.train()
         optimizer = AdamW(model.parameters(), lr=training_args.learning_rate)
         train_dataloader = torch.utils.data.DataLoader(datasets["train"], batch_size=training_args.per_device_train_batch_size,
-                                shuffle=True, drop_last=training_args.dataloader_drop_last, collate_fn=pad_tokens(data_args=data_args))
+                                shuffle=True, drop_last=training_args.dataloader_drop_last, collate_fn=pad_tokens(data_args))
         scheduler = get_linear_schedule_with_warmup(
             optimizer, num_warmup_steps=training_args.warmup_steps, num_training_steps=training_args.num_train_epochs * len(train_dataloader)
         )
