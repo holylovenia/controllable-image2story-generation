@@ -13,7 +13,7 @@ class MLP(nn.Module):
         return self.model(x)
 
     def __init__(self, sizes: Tuple[int, ...], bias=True, act=nn.Tanh):
-        super(MLP, self).__init__()
+        super().__init__()
         layers = []
         for i in range(len(sizes) - 1):
             layers.append(nn.Linear(sizes[i], sizes[i + 1], bias=bias))
@@ -33,16 +33,15 @@ class ClipCaptionModel(nn.Module):
     def get_dummy_token(self, batch_size: int, device: torch.device) -> torch.Tensor:
         return torch.zeros(batch_size, self.prefix_length, dtype=torch.int64, device=device)
 
-    def forward(self, batch, labels: Optional[torch.Tensor] = None):
-
-        text_embeddings = self.decoder.transformer.wte(batch["input_ids"])
-        prefix_projections = self.mapping_network(batch["clip_embeddings"]).view(-1, self.prefix_length, self.decoder_embedding_size)
+    def forward(self, input_ids, masks, prefixes, labels: Optional[torch.Tensor] = None):
+        text_embeddings = self.decoder.transformer.wte(input_ids)
+        prefix_projections = self.mapping_network(prefixes).view(-1, self.prefix_length, self.decoder_embedding_size)
         caption_embeddings = torch.cat((prefix_projections, text_embeddings), dim=1)
 
         if labels is not None:
-            dummy_token = self.get_dummy_token(batch["input_ids"].shape[0], batch["input_ids"].device)
-            labels = torch.cat((dummy_token, batch["input_ids"]), dim=1)
-        out = self.decoder(inputs_embeds=caption_embeddings, labels=labels, attention_mask=batch["mask"])
+            dummy_token = self.get_dummy_token(input_ids.shape[0], input_ids.device)
+            labels = torch.cat((dummy_token, input_ids), dim=1)
+        out = self.decoder(inputs_embeds=caption_embeddings, labels=labels, attention_mask=masks)
 
         return out
 

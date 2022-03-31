@@ -21,7 +21,7 @@ class ModelArguments:
         metadata={"help": "Prefix length clip"},
     )
     prefix_dim: Optional[int] = field(
-        default=640,
+        default=512,
         metadata={"help": "Prefix dimension"},
     )
     normalize_prefix: Optional[bool] = field(

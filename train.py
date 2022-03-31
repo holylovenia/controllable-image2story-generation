@@ -5,7 +5,7 @@ from args_helper import (
     TrainingArguments
 )
 from datasets import load_from_disk, load_metric, set_caching_enabled, DatasetDict
-from data_utils import load_dataset, pad_tokens
+from data_utils import load_dataset
 from models import ClipCaptionModel
 from torch.nn.functional import cross_entropy
 from tqdm import tqdm
@@ -83,7 +83,7 @@ def run(model_args, data_args, training_args):
         batch["input_ids"] = tokenizer.encode(text=batch["caption"], return_tensors="pt")
         batch = pad_tokens(batch)
         if model_args.normalize_prefix:
-            batch["clip_embeddings"] = torch.Tensor(batch["clip_embeddings"])
+            batch["clip_embeddings"] = torch.Tensor(batch["clip_embeddings"]).float()
             batch["clip_embeddings"] = batch["clip_embeddings"] / batch["clip_embeddings"].norm(2, -1)
         return batch
 
@@ -119,7 +119,7 @@ def run(model_args, data_args, training_args):
         model.train()
         optimizer = AdamW(model.parameters(), lr=training_args.learning_rate)
         train_dataloader = torch.utils.data.DataLoader(datasets["train"], batch_size=training_args.per_device_train_batch_size,
-                                shuffle=True, drop_last=training_args.dataloader_drop_last, collate_fn=pad_tokens(data_args))
+                                shuffle=True, drop_last=training_args.dataloader_drop_last)
         scheduler = get_linear_schedule_with_warmup(
             optimizer, num_warmup_steps=training_args.warmup_steps, num_training_steps=training_args.num_train_epochs * len(train_dataloader)
         )
@@ -129,12 +129,16 @@ def run(model_args, data_args, training_args):
             print(f">>> Training epoch {epoch}")
             sys.stdout.flush()
             progress = tqdm(total=len(train_dataloader), desc=output_prefix)
-            for idx, (tokens, mask, prefix) in enumerate(train_dataloader):
+            for idx, data in enumerate(train_dataloader):
+
+                input_ids = torch.stack(data["input_ids"][0], dim=1).to(device)
+                masks = torch.stack(data["mask"][0], dim=1).to(device).float()
+                prefixes = torch.stack(data["clip_embeddings"][0], dim=1).to(device).float()
+
                 model.zero_grad()
-                tokens, mask, prefix = tokens.to(device), mask.to(device), prefix.to(device, dtype=torch.float32)
-                outputs = model(tokens, prefix, mask)
+                outputs = model(input_ids, masks, prefixes)
                 logits = outputs.logits[:, model_args.prefix_length - 1: -1]
-                loss = cross_entropy(logits.reshape(-1, logits.shape[-1]), tokens.flatten(), ignore_index=0)
+                loss = cross_entropy(logits.reshape(-1, logits.shape[-1]), input_ids.flatten(), ignore_index=0)
                 loss.backward()
                 optimizer.step()
                 scheduler.step()

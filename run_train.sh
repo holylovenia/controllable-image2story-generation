@@ -1,5 +1,5 @@
 # CLIP embeddings
-CUDA_VISIBLE_DEVICES=0 python train.py \
+CUDA_VISIBLE_DEVICES=1 python train.py \
    --model_name_or_path="gpt2" \
    --cache_dir_path="./cache/openai/clip-vit-base-patch32" \
    --preprocessing_num_workers=8 --image_column_name=image_id --text_column_name=caption \

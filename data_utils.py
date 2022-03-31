@@ -1,27 +1,28 @@
+from torch.utils.data import DataLoader
+
 import datasets
 import pandas as pd
-import torch
 
 
-def pad_tokens(self, batch, data_args):
-        tokens = batch["input_ids"]
-        padding = self.max_seq_len - tokens.shape[0]
-        if padding > 0:
-            tokens = torch.cat((tokens, torch.zeros(padding, dtype=torch.int64) - 1))
-            batch["input_ids"] = tokens
-        elif padding < 0:
-            tokens = tokens[:self.max_seq_len]
-            batch["input_ids"] = tokens
-        mask = tokens.ge(0)  # mask is zero where we out of sequence
-        tokens[~mask] = 0
-        mask = mask.float()
-        batch["mask"] = torch.cat((torch.ones(data_args.prefix_length), mask), dim=0)  # adding prefix mask
-        return batch
+# class DataLoader(DataLoader):
+#     def __init__(self, *args, **kwargs):
+#         super().__init__(*args, **kwargs)
+#         self.collate_fn = self._collate_fn
+
+#     def _collate_fn(self, batch):
+
+#         batch_input_ids, batch_mask, batch_token_type_ids, batch_labels = [], [], [], []
+#         for data in batch:
+#             batch_input_ids.append(np.array(data['input_ids']))
+#             batch_mask.append(np.array(data['attention_mask']))
+#             if 'token_type_ids' in data:
+#                 batch_token_type_ids.append(np.array(data['token_type_ids']))
+#             batch_labels.append(data['label'])
+
+#         return np.array(batch_input_ids), np.array(batch_mask), np.array(batch_token_type_ids) if len(batch_token_type_ids) > 0 else None, np.array(batch_labels)
+
 
 
 def load_dataset(dir_path):
     preprocessed_dataset = datasets.load_from_disk('{}/preprocess_data.arrow'.format(dir_path))
-    # # Load tokenizer
-    # tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path)
-    # preprocessed_dataset.set_transform(_tokenize(tokenizer))
     return preprocessed_dataset
