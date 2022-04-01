@@ -33,9 +33,15 @@ class ClipCaptionModel(nn.Module):
     def get_dummy_token(self, batch_size: int, device: torch.device) -> torch.Tensor:
         return torch.zeros(batch_size, self.prefix_length, dtype=torch.int64, device=device)
 
+    def get_prefix_projections(self, prefixes):
+        return self.mapping_network(prefixes).view(-1, self.prefix_length, self.decoder_embedding_size)
+
+    def get_text_embeddings(self, input_ids):
+        return self.decoder.transformer.wte(input_ids)
+
     def forward(self, input_ids, masks, prefixes, labels: Optional[torch.Tensor] = None):
-        text_embeddings = self.decoder.transformer.wte(input_ids)
-        prefix_projections = self.mapping_network(prefixes).view(-1, self.prefix_length, self.decoder_embedding_size)
+        text_embeddings = self.get_text_embeddings(input_ids)
+        prefix_projections = self.get_prefix_projections(prefixes)
         caption_embeddings = torch.cat((prefix_projections, text_embeddings), dim=1)
 
         if labels is not None:

@@ -22,8 +22,8 @@ from transformers import (
 )
 from transformers.trainer_utils import get_last_checkpoint, is_main_process
 
-import datasets
 import logging
+import numpy as np
 import os
 import sys
 import torch
@@ -64,7 +64,7 @@ def run(model_args, data_args, training_args):
     # Preprocess image sample and label text
     print('Vectorize dataset...')
 
-    def pad_tokens(batch, max_seq_len=50):
+    def pad_tokens(batch, max_seq_len=70): # max length from the data is 67
         tokens = batch["input_ids"]
         padding = max_seq_len - tokens.shape[1]
         if padding > 0:
@@ -106,7 +106,7 @@ def run(model_args, data_args, training_args):
     if data_args.preprocessing_only:
         logger.info(f"Data preprocessing finished. Files cached at {preprocessed_datasets.cache_files}.")
         return
-
+        
     ###
     # Prepare Data Collator and Trainer
     ###
@@ -151,7 +151,7 @@ def run(model_args, data_args, training_args):
                         os.path.join(training_args.output_dir, f"{output_prefix}_latest.pt"),
                     )
             progress.close()
-            if epoch % model_args.save_every == 0 or epoch == training_args.num_train_epochs - 1:
+            if epoch % training_args.save_steps == 0 or epoch == training_args.num_train_epochs - 1:
                 torch.save(
                     model.state_dict(),
                     os.path.join(training_args.output_dir, f"{output_prefix}-{epoch:03d}.pt"),
