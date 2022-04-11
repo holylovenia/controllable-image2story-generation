@@ -91,7 +91,7 @@ def run(model_args, data_args, training_args):
         preprocessed_datasets = preprocessed_datasets.map(
             tokenize,
             num_proc=data_args.preprocessing_num_workers,
-            remove_columns=["image", "image_path", "caption", "id", "image_id"],
+            remove_columns=["image", "caption", "id", "image_id"], # "image_path"
             batched=False,
             writer_batch_size=data_args.writer_batch_size,
             desc="preprocess datasets",

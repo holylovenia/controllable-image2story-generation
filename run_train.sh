@@ -11,4 +11,5 @@ CUDA_VISIBLE_DEVICES=1 python train.py \
    --evaluation_strategy=epoch --eval_steps=1 --eval_accumulation_steps=1 \
    --save_strategy=epoch --save_steps=1 --save_total_limit=3 --load_best_model_at_end \
    --gradient_checkpointing=True \
-   --do_train=True
+   --do_train=True \
+   --preprocessing_only=True --overwrite_output_dir=True \

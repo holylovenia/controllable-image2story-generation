@@ -92,7 +92,7 @@ def run(model_args, data_args, training_args):
         preprocessed_datasets = preprocessed_datasets.map(
             tokenize,
             num_proc=data_args.preprocessing_num_workers,
-            remove_columns=["image", "image_path", "caption", "id", "image_id"],
+            remove_columns=["image", "caption", "id", "image_id"], # "image_path"
             batched=False,
             writer_batch_size=data_args.writer_batch_size,
             desc="preprocess datasets",
@@ -196,7 +196,7 @@ def run(model_args, data_args, training_args):
                 output_texts = [output_texts[i] for i in order]
                 return output_texts
 
-            test_results["id"].append(idx)
+            test_results["id"].append(data["image_path"][0])
             test_results["gold_caption"].append(tokenizer.batch_decode(sequences=input_ids)[0].replace("!", ""))
             generated_texts = generate_text_using_beam_search(model, tokenizer, embeddings=prefix_embeddings)
             for i, text in enumerate(generated_texts):
