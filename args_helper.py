@@ -77,7 +77,11 @@ class DataArguments:
     )
     shard_index: Optional[int] = field(
         default=0,
-        metadata={"help": "Shard index (0-99)."},
+        metadata={"help": "Shard index (0-4)."},
+    )
+    num_shards: Optional[int] = field(
+        default=5,
+        metadata={"help": "Number of shards."},
     )
 
 @dataclass

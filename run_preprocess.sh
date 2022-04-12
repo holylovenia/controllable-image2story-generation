@@ -1,4 +1,4 @@
-CUDA_VISIBLE_DEVICES=1 python match_genre.py \
+CUDA_VISIBLE_DEVICES=1 python preprocess.py \
    --cache_dir_path="./cache/bookcorpusopen" \
    --preprocessing_num_workers=32 \
    --dataloader_num_workers=32 --dataloader_pin_memory --group_by_length \
@@ -7,4 +7,4 @@ CUDA_VISIBLE_DEVICES=1 python match_genre.py \
    --logging_strategy=steps --logging_steps=10 --report_to=tensorboard \
    --preprocessing_only=True \
    --writer_batch_size=1000 \
-   --shard_index=4 --num_shards=5 \
+   --num_shards=5 \

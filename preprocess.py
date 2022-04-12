@@ -1,18 +1,19 @@
+from cgi import test
 from functools import cache
 from args_helper import (
     DataArguments,
     ModelArguments,
     TrainingArguments
 )
-from datasets import load_dataset, load_from_disk, set_caching_enabled
+from datasets import concatenate_datasets, load_dataset, load_from_disk, set_caching_enabled, Dataset, DatasetDict
 from transformers import set_seed, HfArgumentParser
 from transformers.trainer_utils import get_last_checkpoint, is_main_process
+from tqdm import tqdm
 
 import logging
 import numpy as np
 import os
 import pandas as pd
-import string
 import sys
 import transformers
 
@@ -28,44 +29,67 @@ def run(model_args, data_args, training_args):
 
     os.makedirs(data_args.cache_dir_path, exist_ok=True)
 
-    bookcorpus = load_dataset("bookcorpusopen")
-    bookcorpus["train"] = bookcorpus["train"].shard(num_shards=data_args.num_shards, index=data_args.shard_index)
-    print("BookCorpusOpen length: {}".format(len(bookcorpus["train"])))
+    def is_bookcorpusopen_genre_ready(data_args):
+        for shard_index in range(data_args.num_shards):
+            shard_path = "{}/bookcorpusopen_genre_{:02d}.arrow".format(data_args.cache_dir_path, shard_index)
+            if not os.path.exists(shard_path):
+                return False
+        return True
 
-    print("Loading genre source...")
-    preprocessed_source_path = "{}/preprocessed_smashwords_april_2021.csv".format(data_args.cache_dir_path)
-    if os.path.isfile(preprocessed_source_path):
-        source = pd.read_csv(preprocessed_source_path)
-    else:
-        source = pd.read_csv("~/datasets/books1/smashwords_april_2021.csv")
-        source["Plain_Title"] = source["Title"].apply(
-            lambda title: str(title).lower().translate(str.maketrans("", "", string.punctuation)).replace("\s+", " "))
-        source.to_csv(preprocessed_source_path)
+    if not is_bookcorpusopen_genre_ready(data_args):
+        logger.info(f"Not all data has genre. Files cached at {data_args.cache_dir_path}.")
+        return
 
-    def search_genre_by_title(book):
-        _title = book["title"].replace(".epub.txt", "")
-        _title = " ".join(_title.split("-"))
-        result = source.loc[source["Plain_Title"] == _title]
-        if result is not None and len(result) > 0:
-            book["genre"] = result["Categories"].replace("»", "|")
-        else:
-            book["genre"] = None
-        return book
+    # Load all dataset shards and concatenate them into a single dataset
+    dataset_shards = []
+    for shard_index in range(data_args.num_shards):
+        shard_path = "{}/bookcorpusopen_genre_{:02d}.arrow".format(data_args.cache_dir_path, shard_index)
+        _shard = load_from_disk(shard_path)
+        dataset_shards.append(_shard["train"])
+    bookcorpusopen = DatasetDict()
+    bookcorpusopen["train"] = concatenate_datasets(dataset_shards)
+    
+    def convert_book_to_chunks(book, resulting_dict, min_chunk_words=30, max_chunk_words=60):
+        chunks = book["text"].replace("\s+", "\n").split("\n")
 
-    print("Searching genre by title...")
-    bookcorpus = bookcorpus.map(
-        search_genre_by_title,
-        num_proc=data_args.preprocessing_num_workers,
-        batched=False,
-        writer_batch_size=data_args.writer_batch_size,
-        desc="genre search",
-        load_from_cache_file=True,
-        cache_file_names={
-            "train": "{}/bookcorpus_genre_{:02d}.arrow".format(data_args.cache_dir_path, data_args.shard_index)
-        },
-    )
+        for i, chunk in enumerate(chunks):
+            chunk_length = len(chunk.split(" "))
+            if chunk_length >= min_chunk_words and chunk_length <= max_chunk_words:
+                resulting_dict["title"].append(book["title"])
+                resulting_dict["chunk"].append(chunk)
 
-    bookcorpus.save_to_disk("{}/bookcorpusopen_genre_{:02d}.arrow".format(data_args.cache_dir_path, data_args.shard_index))
+                _genre = book["genre"][0].replace("»", ",") if book["genre"] is not None else ""
+                _genre = str(set([g.strip() for g in _genre.split(",")]))
+                resulting_dict["genre"].append(_genre)
+
+        return resulting_dict
+
+    print("Filter chunks from books...")
+    data = {
+        "title": [],
+        "genre": [],
+        "chunk": [],
+    }
+    for i, book in tqdm(enumerate(bookcorpusopen["train"]), total=len(bookcorpusopen["train"])):
+        data = convert_book_to_chunks(book, data)
+
+    df = pd.DataFrame(data)
+    bookcorpus_chunks = Dataset.from_pandas(df).shuffle(seed=training_args.seed)
+
+    print('Splitting dataset to train, valid, test')
+    bookcorpus_chunks_train = bookcorpus_chunks.train_test_split(test_size=0.2, train_size=0.8)
+    bookcorpus_chunks_train, bookcorpus_chunks_test = bookcorpus_chunks_train["train"], bookcorpus_chunks_train["test"]
+    bookcorpus_chunks_test = bookcorpus_chunks_test.train_test_split(test_size=0.5)
+    
+    preprocessed_datasets = DatasetDict({
+        "train": bookcorpus_chunks_train,
+        "valid": bookcorpus_chunks_test["train"],
+        "test": bookcorpus_chunks_test["test"],
+    })
+
+    print('Saving to disk...')
+    preprocessed_datasets.save_to_disk("{}/bookcorpusopen_chunked.arrow".format(data_args.cache_dir_path))
+
 
 
 #####
