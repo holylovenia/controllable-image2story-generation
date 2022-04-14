@@ -75,6 +75,14 @@ class DataArguments:
         default=False,
         metadata={"help": "Preprocessing only?"},
     )
+    dataset_path: Optional[str] = field(
+        default=None,
+        metadata={"help": "Dataset path."},
+    )
+    block_size: Optional[int] = field(
+        default=1024,
+        metadata={"help": "Main data processing function that will concatenate all texts from our dataset and generate chunks of block_size."},
+    )
 
 @dataclass
 class TrainingArguments(TrainingArguments):

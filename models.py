@@ -26,6 +26,7 @@ class ClipCaptionModel(nn.Module):
         super().__init__()
         self.prefix_length = prefix_length
         self.decoder = GPT2LMHeadModel.from_pretrained("gpt2")
+        self.decoder.config.update({"n_positions": 2048})
         self.decoder_embedding_size = self.decoder.transformer.wte.weight.shape[1]
         self.mapping_network = MLP((prefix_size, (self.decoder_embedding_size * prefix_length) // 2,
                                      self.decoder_embedding_size * prefix_length))

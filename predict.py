@@ -56,6 +56,7 @@ def run(model_args, data_args, training_args):
     preprocessed_datasets = DatasetDict()
     print('Loading train, validation, test dataset...')
     preprocessed_datasets = load_dataset(data_args.cache_dir_path)
+    preprocessed_datasets["test"] = preprocessed_datasets["test"].shard(index=0, num_shards=1000)
 
     print('Preprocess dataset...')
 
@@ -203,7 +204,8 @@ def run(model_args, data_args, training_args):
                 test_results["generated_text_{}".format(i)].append(text)
 
         test_df = pd.DataFrame.from_dict(test_results)
-        test_df.to_csv(os.path.join(training_args.output_dir, "predict.csv"))
+        # test_df.to_csv(os.path.join(training_args.output_dir, "predict.csv"))
+        test_df.to_csv(os.path.join(training_args.output_dir, "test_predict.csv"))
 
     print('Load model...')
     model = ClipCaptionModel(model_args.prefix_length, clip_length=model_args.prefix_length_clip, prefix_size=model_args.prefix_dim)
