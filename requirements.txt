@@ -10,3 +10,4 @@ numpy~=1.22.3
 torch~=1.11.0
 scikit-learn~=1.0.2
 matplotlib~=3.5.1
+datasets~=2.1.0
