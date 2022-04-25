@@ -40,6 +40,8 @@ from IPython import embed
 
 logger = logging.getLogger(__name__)
 
+from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions
+
 PRETRAINED_MODEL_ARCHIVE_MAP = {"gpt2": "https://s3.amazonaws.com/models.huggingface.co/bert/gpt2-pytorch_model.bin"}
 PRETRAINED_CONFIG_ARCHIVE_MAP = {"gpt2": "https://s3.amazonaws.com/models.huggingface.co/bert/gpt2-config.json"}
 
@@ -759,18 +761,22 @@ class GPT2LMHeadModel(GPT2PreTrainedModel):
         """
         self.lm_head.set_embeddings_weights(self.transformer.wte.weight)
 
-    def forward(self, input_ids, position_ids=None, token_type_ids=None, lm_labels=None, past=None, task_id=-1, kl_weight=0):
+    def forward(self, input_ids, position_ids=None, token_type_ids=None, labels=None, past=None, task_id=-1, kl_weight=0):
+        
         if task_id==-1: # if didn't specify which adapter should be used, use the default one.
             task_id=self.default_task_id
-        hidden_states, presents = self.transformer(input_ids, position_ids, token_type_ids, past, task_id)
+        transformer_outputs = self.transformer(input_ids, position_ids, token_type_ids, past, task_id)
+        hidden_states, presents = transformer_outputs
 
         self.hidden_states = hidden_states
         lm_logits = self.lm_head(hidden_states)
-        if lm_labels is not None:
+        
+        loss = None
+        if labels is not None:
             
             # Shift so that tokens < n predict n
             shift_logits = lm_logits[:, :-1].contiguous()
-            shift_labels = lm_labels[:, 1:].contiguous()
+            shift_labels = labels[:, 1:].contiguous()
 
             # Flatten the tokens
             loss_fct = CrossEntropyLoss(ignore_index=-100)
@@ -791,8 +797,12 @@ class GPT2LMHeadModel(GPT2PreTrainedModel):
                 kl_loss = kl_fct( source_dist , target_dist )
                 # print(kl_loss.item())
                 loss += kl_weight*kl_loss
-            return loss
-        return lm_logits, presents
+
+        return CausalLMOutputWithCrossAttentions(
+            loss=loss,
+            logits=lm_logits
+        )
+
 
     # HACK HACK HACK
     def forward_embed(self, inputs_ids, position_ids=None, token_type_ids=None, past=None):
