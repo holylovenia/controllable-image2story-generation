@@ -10,10 +10,12 @@ class ModelArguments:
     Arguments pertaining to which model/config/tokenizer we are going to utilize.
     """
     model_size: Optional[str] = field(
-        default="medium", metadata={"help": "The size of pretrained GPT2 model."}
+        default="medium", 
+        metadata={"help": "The size of pretrained GPT2 model."}
     )
     load_checkpoint_adapter: Optional[str] = field(
-        default="", metadata={"help": "Path to adapter checkpoint."}
+        default="", 
+        metadata={"help": "Path to adapter checkpoint."}
     )
     max_seq_len: Optional[int] = field(
         default=512,
@@ -51,9 +53,10 @@ class DataArguments:
                            is considered as a genre to match with the genre input.\
                            None defaults to use all bookcorpusopen genres to match."},
     )
-    sample_row: Optional[str] = field(
-        default=None, metadata={"help": "set the int number to sample the dataset,\
-                                         None means using all the datasets samples available"}
+    sample_row: Optional[int] = field(
+        default=None, 
+        metadata={"help": "set the int number to sample the dataset,\
+                           None means using all the datasets samples available"}
     )
 
 @dataclass
