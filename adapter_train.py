@@ -32,8 +32,6 @@ import os
 import sys
 import torch
 import transformers
-
-import pandas as pd
 from torch.utils.data import Dataset
 
 from ppcm_models.pytorch_pretrained_bert.modeling_adapter import GPT2LMHeadModel, GPT2Config
@@ -44,12 +42,15 @@ logger = logging.getLogger(__name__)
 
 
 class BookcorpusopenGenreAdapterDataset(Dataset):
-    def __init__(self, data_args, split, tokenizer, block_size=1024, genres=None, 
-                        sample_row=100, top_n_genres=6, genre_sample_range=100, 
-                         exclude_non_adapter=True, truncate=True, max_seq_len=512,
-                         add_special_tokens = True,
+    def __init__(self, data_args, split, tokenizer, genre=None, adapter_id=-1,
+                         block_size=1024, sample_row=100, match_up_to_n_genres=None, 
+                         truncate=True, max_seq_len=512, add_special_tokens = True,
                          *args, **kwargs):
         super(BookcorpusopenGenreAdapterDataset, self).__init__(*args, **kwargs)
+        """
+        Args:
+            adapter_id: int, adapter_id for the genre we want the adapter to be trained with
+        """
         
         self.data_args = data_args
         self.tokenizer = tokenizer
@@ -57,13 +58,14 @@ class BookcorpusopenGenreAdapterDataset(Dataset):
         self.add_special_tokens = add_special_tokens
         self.truncate = truncate
         self.max_seq_len = max_seq_len
+        self.adapter_id = adapter_id
         self.preprocessing_num_workers = data_args.preprocessing_num_workers
-        self.dataset, self.genres = self.load_bookcorpusopen(split, genres, sample_row, 
-                                                                top_n_genres, genre_sample_range,
-                                                                exclude_non_adapter)
+        self.dataset = self.load_bookcorpusopen(split, genre, 
+                                                             match_up_to_n_genres,
+                                                             sample_row)
 
-    def load_bookcorpusopen(self, split, genres=None, sample_row=None, top_n_genres=None, 
-                            genre_sample_range=None, exclude_non_adapter=True):
+    def load_bookcorpusopen(self, split, genre='Fiction', 
+                            match_up_to_n_genres=None, sample_row=None):
         """
         Load bookcorpusopen from pyarrow file.
         
@@ -72,42 +74,28 @@ class BookcorpusopenGenreAdapterDataset(Dataset):
             
         Args:
             split: string, {train, valid, test}
-            genres: list of string, genres that we want the dataset to be labelled with, 
-                    according to the index, e.g. ['Fiction', 'General', ...]
+            genre: string, genre that we want the adapter to be trained with, e.g. 'Fiction'
+            match_up_to_n_genres: int, how many of the firsts bookcorpusopen genres entries 
+                                    is considered as a genre to match with the genre input.
+                                    None defaults to use all bookcorpusopen genres to match.
             sample_row: int, set the int number to sample the dataset, None means using 
                         all the datasets samples available
-            top_n_genres: int, if genres==None, we will extract the list of genres ourselves,
-                          and top_n_genres dictates how many genres we want to take sorted on
-                          the frequency, descending
-            genre_sample_range: int, if genres==None, we will extract the list of genres ourselves,
-                                and genre_sample_range dictates how many samples will be used in to
-                                derive list of genres
-            exclude_non_adapter: bool, set to False if we want to use the non styled dataset
+            match_up_to_n_genres
             
         Returns:
             dataset: tokenized huggingface dataset format from one of the bookcorpusopen split, 
                         with the adapter_id attached, and without any adapter_id = -1
         """
-        
-        def get_adapter_id(story_genre_list_string, adapter_genre_list):
-            """
-            assume that the genre of story is the foremost genre listed in story_genre_list_string
-            """
-            spotted_genre = {}
-            selected_adapter_id = -1
-            genre_index = 9999999999999999
-            story_genre_list = [genre[1:-1] for genre in story_genre_list_string[1:-1].split(', ')]
 
-            for adapter_id, adapter_genre in enumerate(adapter_genre_list):
-                if adapter_genre.lower() in story_genre_list_string.lower():
-                    for i, story_genre in enumerate(story_genre_list):
-                        if adapter_genre in story_genre_list and i < genre_index:
-                            genre_index = i
-                    spotted_genre[i] = adapter_id
-            selected_adapter_id = spotted_genre[min(spotted_genre.keys())] \
-                                    if len(spotted_genre)>0 else selected_adapter_id
-
-            return selected_adapter_id
+        def genre_match(entry_genres_string_list, genre, match_up_to_n_genres):
+            """
+            True to the genre that match to match_up_to_n_genres genres from the entry_genres
+            else false
+            """
+            story_genre_list = [genre[1:-1] for genre in entry_genres_string_list[1:-1].split(', ')]
+            story_genre_stringlist = ", ".join(story_genre_list[:match_up_to_n_genres])
+            
+            return genre.lower() in story_genre_stringlist.lower()
         
         def map_tokenization(batch):
             self.tokenizer.pad_token = self.tokenizer.eos_token
@@ -126,24 +114,10 @@ class BookcorpusopenGenreAdapterDataset(Dataset):
         print('Loaded')
         sample_row = len(datasets[split]) if sample_row == None else sample_row
         
-        print('Getting adapter_ids and use only the selected split')
-        # if frequent_genres not defined yet, derive frequent genres
-        if genres == None:
-            print('Generating new list of frequent genres from', split, 'split')
-            genres=[]
-            for i in range(sample_range):
-                genres.extend([genre[1:-1] for genre in datasets[split]['genre'][i][1:-1].split(', ')])
-
-            df_genres = pd.DataFrame({'genres':genres})
-            frequent_genres = df_genres.genres.value_counts()[:top_n].index.tolist()
-            frequent_genres.remove('') if '' in top_genres else top_genres
-            genres = frequent_genres
-
         dataset = datasets[split].select(np.arange(0,sample_row,1))\
-                                    .map(lambda x: {'adapter_id': get_adapter_id(x['genre'], genres)}\
-                                         , num_proc=self.preprocessing_num_workers)
-        dataset = dataset.filter(lambda x: x['adapter_id']!=-1) if exclude_non_adapter else dataset
-        print('Derived adapter_ids and used only the', split, 'split')
+                                .filter(lambda x: genre_match(x['genre'], genre, match_up_to_n_genres)\
+                                        , num_proc=self.preprocessing_num_workers)
+
         
         # Tokenize with huggingface datasets mapping function
         tokenized_dataset = dataset.map(
@@ -154,15 +128,14 @@ class BookcorpusopenGenreAdapterDataset(Dataset):
         )
         print(split, 'split tokenized')
         
-        return tokenized_dataset, genres
+        return tokenized_dataset
 
     def __getitem__(self, index):
             
         forward_inputs = {}
-        forward_inputs['task_id'] = self.dataset[index]['adapter_id']
+        forward_inputs['task_id'] = self.adapter_id
         forward_inputs['input_ids'] = self.dataset[index]['input_ids']
         forward_inputs["labels"] = forward_inputs["input_ids"].copy()
-        # forward_inputs['attention_mask'] = self.dataset[index]['attention_mask']
         
         return forward_inputs
 
@@ -208,15 +181,19 @@ def run(model_args, data_args, training_args):
     parameters_to_update = [p for n, p in model.named_parameters() if "adapter" in str(n)]
     print('GPT2 param frozen, Adapter is trainable and initialized with AdamW')
 
-    frequent_genres = ['Fiction', 'General', 'Fantasy', 'Romance', 'Adventure']
+    # frequent_genres = ['Fiction', 'General', 'Fantasy', 'Romance', 'Adventure']
 
-    train_dataset = BookcorpusopenGenreAdapterDataset(data_args, 'train', tokenizer, block_size=1024, 
-                                                      genres=frequent_genres, sample_row=200, top_n_genres=6, 
-                                                      genre_sample_range=100, max_seq_len=512)
+    train_dataset = BookcorpusopenGenreAdapterDataset(data_args, 'train', tokenizer, genre=data_args.genre,
+                                                      adapter_id=data_args.adapter_id, block_size=1024,
+                                                      sample_row=200,
+                                                      match_up_to_n_genres=data_args.match_up_to_n_genres,
+                                                      max_seq_len=512)
 
-    valid_dataset = BookcorpusopenGenreAdapterDataset(data_args, 'valid', tokenizer, block_size=1024, 
-                                                      genres=frequent_genres, sample_row=200, top_n_genres=6, 
-                                                      genre_sample_range=100, max_seq_len=512)
+    valid_dataset = BookcorpusopenGenreAdapterDataset(data_args, 'valid', tokenizer, genre=data_args.genre,
+                                                      adapter_id=data_args.adapter_id, block_size=1024,
+                                                      sample_row=200,
+                                                      match_up_to_n_genres=data_args.match_up_to_n_genres,
+                                                      max_seq_len=512)
     
     def preprocess_logits_for_metrics(logits, labels):
         if isinstance(logits, tuple):

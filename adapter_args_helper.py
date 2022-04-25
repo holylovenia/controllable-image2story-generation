@@ -33,6 +33,20 @@ class DataArguments:
         default="chunk",
         metadata={"help": "The name of the dataset column containing the story data."},
     )
+    genre: Optional[str] = field(
+        default="Fiction",
+        metadata={"help": "Genre that we want the adapter to be trained with."},
+    )
+    adapter_id: Optional[int] = field(
+        default=-1,
+        metadata={"help": "Id for the genre we want the adapter to be trained with."},
+    )
+    match_up_to_n_genres: Optional[int] = field(
+        default=None,
+        metadata={"help": "how many of the firsts bookcorpusopen genres entries\
+                           is considered as a genre to match with the genre input.\
+                           None defaults to use all bookcorpusopen genres to match."},
+    )
 
 @dataclass
 class TrainingArguments(TrainingArguments):
