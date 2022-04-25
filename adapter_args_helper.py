@@ -31,7 +31,7 @@ class DataArguments:
     )
     bookcorpusopen_story_column_name: Optional[str] = field(
         default="chunk",
-        metadata={"help": "The name of the dataset column containing the story data.},
+        metadata={"help": "The name of the dataset column containing the story data."},
     )
 
 @dataclass

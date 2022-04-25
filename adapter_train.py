@@ -39,6 +39,9 @@ from torch.utils.data import Dataset
 from ppcm_models.pytorch_pretrained_bert.modeling_adapter import GPT2LMHeadModel, GPT2Config
 from utils.helper import load_model_recursive
 
+set_caching_enabled(True)
+logger = logging.getLogger(__name__)
+
 
 class BookcorpusopenGenreAdapterDataset(Dataset):
     def __init__(self, data_args, split, tokenizer, block_size=1024, genres=None, 
@@ -107,17 +110,19 @@ class BookcorpusopenGenreAdapterDataset(Dataset):
             return selected_adapter_id
         
         def map_tokenization(batch):
-            tokenized = tokenizer(batch[data_args.bookcorpusopen_story_column_name], 
-                                  truncation=self.truncate,
-                                  max_length=self.max_seq_len,
-                                  add_special_tokens=self.add_special_tokens,
-                                  return_tensors='pt')
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+            tokenized = self.tokenizer(batch[self.data_args.bookcorpusopen_story_column_name], 
+                                          truncation=self.truncate,
+                                          max_length=self.max_seq_len,
+                                          padding='max_length',
+                                          add_special_tokens=self.add_special_tokens,
+                                          return_tensors='pt')
             return tokenized
         
         # load bookcorpusopen from arrow file
         datasets = DatasetDict()
         print('Loading train, validation, test dataset...')
-        datasets = load_from_disk(data_args.dataset_path)
+        datasets = load_from_disk(self.data_args.dataset_path)
         print('Loaded')
         sample_row = len(datasets[split]) if sample_row == None else sample_row
         
@@ -143,21 +148,22 @@ class BookcorpusopenGenreAdapterDataset(Dataset):
         # Tokenize with huggingface datasets mapping function
         tokenized_dataset = dataset.map(
             map_tokenization,
-            remove_columns=data_args.bookcorpusopen_story_column_name,
+            remove_columns=self.data_args.bookcorpusopen_story_column_name,
             num_proc=self.preprocessing_num_workers,
             load_from_cache_file=True
         )
+        print(split, 'split tokenized')
         
         return tokenized_dataset, genres
 
     def __getitem__(self, index):
             
         forward_inputs = {}
+        forward_inputs['task_id'] = self.dataset[index]['adapter_id']
         forward_inputs['input_ids'] = self.dataset[index]['input_ids']
-        forward_inputs['attention_mask'] = self.dataset[index]['attention_mask']
-        forward_inputs['adapter_id'] = self.dataset[index]['adapter_id']
-        
         forward_inputs["labels"] = forward_inputs["input_ids"].copy()
+        # forward_inputs['attention_mask'] = self.dataset[index]['attention_mask']
+        
         return forward_inputs
 
     def __len__(self):
@@ -202,7 +208,8 @@ def run(model_args, data_args, training_args):
     parameters_to_update = [p for n, p in model.named_parameters() if "adapter" in str(n)]
     print('GPT2 param frozen, Adapter is trainable and initialized with AdamW')
 
-        
+    frequent_genres = ['Fiction', 'General', 'Fantasy', 'Romance', 'Adventure']
+
     train_dataset = BookcorpusopenGenreAdapterDataset(data_args, 'train', tokenizer, block_size=1024, 
                                                       genres=frequent_genres, sample_row=200, top_n_genres=6, 
                                                       genre_sample_range=100, max_seq_len=512)
@@ -238,8 +245,18 @@ def run(model_args, data_args, training_args):
         args=training_args,
         compute_metrics=compute_metrics if training_args.do_eval else None,
         preprocess_logits_for_metrics=preprocess_logits_for_metrics if training_args.do_eval else None,
-        callbacks=[EarlyStoppingCallback(early_stopping_patience=5)]
     )
+    
+    # trainer = Trainer(
+    #     train_dataset=train_dataset,
+    #     eval_dataset=valid_dataset,
+    #     model=model,
+    #     data_collator=default_data_collator,
+    #     args=training_args,
+    #     compute_metrics=compute_metrics if training_args.do_eval else None,
+    #     preprocess_logits_for_metrics=preprocess_logits_for_metrics if training_args.do_eval else None,
+    #     callbacks=[EarlyStoppingCallback(early_stopping_patience=5)]
+    # )
     
     ###
     # Training Phase
@@ -325,6 +342,8 @@ def main():
         model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
     else:
         model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+        
+    model_args.model_name_or_path = 'GPT2-'+model_args.model_size
 
     # Set random seed
     set_seed(training_args.seed)
