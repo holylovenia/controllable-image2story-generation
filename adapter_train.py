@@ -43,8 +43,8 @@ logger = logging.getLogger(__name__)
 
 class BookcorpusopenGenreAdapterDataset(Dataset):
     def __init__(self, data_args, split, tokenizer, genre=None, adapter_id=-1,
-                         block_size=1024, sample_row=100, match_up_to_n_genres=None, 
-                         truncate=True, max_seq_len=512, add_special_tokens = True,
+                         sample_row=100, match_up_to_n_genres=None, truncate=True, 
+                         max_seq_len=512, add_special_tokens = True,
                          *args, **kwargs):
         super(BookcorpusopenGenreAdapterDataset, self).__init__(*args, **kwargs)
         """
@@ -54,15 +54,14 @@ class BookcorpusopenGenreAdapterDataset(Dataset):
         
         self.data_args = data_args
         self.tokenizer = tokenizer
-        self.block_size = block_size
         self.add_special_tokens = add_special_tokens
         self.truncate = truncate
         self.max_seq_len = max_seq_len
         self.adapter_id = adapter_id
         self.preprocessing_num_workers = data_args.preprocessing_num_workers
         self.dataset = self.load_bookcorpusopen(split, genre, 
-                                                             match_up_to_n_genres,
-                                                             sample_row)
+                                                match_up_to_n_genres,
+                                                sample_row)
 
     def load_bookcorpusopen(self, split, genre='Fiction', 
                             match_up_to_n_genres=None, sample_row=None):
@@ -102,9 +101,7 @@ class BookcorpusopenGenreAdapterDataset(Dataset):
             tokenized = self.tokenizer(batch[self.data_args.bookcorpusopen_story_column_name], 
                                           truncation=self.truncate,
                                           max_length=self.max_seq_len,
-                                          padding='max_length',
-                                          add_special_tokens=self.add_special_tokens,
-                                          return_tensors='pt')
+                                          add_special_tokens=self.add_special_tokens)
             return tokenized
         
         # load bookcorpusopen from arrow file
@@ -112,6 +109,8 @@ class BookcorpusopenGenreAdapterDataset(Dataset):
         print('Loading train, validation, test dataset...')
         datasets = load_from_disk(self.data_args.dataset_path)
         print('Loaded')
+        
+        # Select rows sampled and filter for the matching genres
         sample_row = len(datasets[split]) if sample_row == None else sample_row
         
         dataset = datasets[split].select(np.arange(0,sample_row,1))\
@@ -127,14 +126,14 @@ class BookcorpusopenGenreAdapterDataset(Dataset):
             load_from_cache_file=True
         )
         print(split, 'split tokenized')
-        
+                                
         return tokenized_dataset
 
     def __getitem__(self, index):
             
         forward_inputs = {}
         forward_inputs['task_id'] = self.adapter_id
-        forward_inputs['input_ids'] = self.dataset[index]['input_ids']
+        forward_inputs['input_ids'] = [self.dataset[index]['input_ids']]
         forward_inputs["labels"] = forward_inputs["input_ids"].copy()
         
         return forward_inputs
@@ -153,12 +152,15 @@ def run(model_args, data_args, training_args):
     ## Load either Adapters' checkpoint, or just finetuned DialoGPT
     if(model_args.load_checkpoint_adapter != ""):
         print("Loading ADAPTERS")
-        model = load_model_recursive(GPT2LMHeadModel(config), model_args.load_checkpoint_adapter, model_args, verbose=True)
+        model = load_model_recursive(GPT2LMHeadModel(config), model_args.load_checkpoint_adapter, \
+                                     model_args, verbose=True)
     else:
-        model = load_model_recursive(GPT2LMHeadModel(config), model_args.model_path+f"{model_args.model_size}_ft.pkl", model_args, verbose=True)
+        model = load_model_recursive(GPT2LMHeadModel(config), \
+                                     model_args.model_path+f"{model_args.model_size}_ft.pkl", \
+                                     model_args, verbose=True)
 
     ## Load GPT2 instead of DialoGPT
-
+    print('Load pretrained GPT2')
     pt_gpt2_model = GPT2Model.from_pretrained('gpt2-medium')
 
     model.transformer.wte.weight = pt_gpt2_model.wte.weight
@@ -172,28 +174,48 @@ def run(model_args, data_args, training_args):
         model.transformer.h[layer].ln_2.weight = pt_gpt2_model.h[layer].ln_2.weight
         model.transformer.h[layer].mlp.c_fc.weight = pt_gpt2_model.h[layer].mlp.c_fc.weight
         model.transformer.h[layer].mlp.c_proj.weight = pt_gpt2_model.h[layer].mlp.c_proj.weight
-    # model.to(model_args.device)
-    print('GPT2 loaded instead DialoGPT')
+    print('GPT2 pretrained params loaded to previous DialoGPT adapter')
 
     for n, p in model.named_parameters():
         if "adapter" not in str(n):
             p.requires_grad = False
     parameters_to_update = [p for n, p in model.named_parameters() if "adapter" in str(n)]
     print('GPT2 param frozen, Adapter is trainable and initialized with AdamW')
+    
+    # Main data processing function that will concatenate all texts 
+    # from our dataset and generate chunks of max_seq_len.
+    def group_texts(examples):
+        # Concatenate all texts.
+        concatenated_examples = {k: list(chain(*examples[k])) for k in examples.keys()}
+        total_length = len(concatenated_examples[list(examples.keys())[0]])
+        # We drop the small remainder, we could add padding if the model supported 
+        # it instead of this drop, you can customize this part to your needs.
+        if total_length >= model_args.max_seq_len:
+            total_length = (total_length // model_args.max_seq_len) * model_args.max_seq_len
+        # Split by chunks of max_len.
+        result = {
+            k: [t[i : i + model_args.max_seq_len] \
+                for i in range(0, total_length, model_args.max_seq_len)]
+            for k, t in concatenated_examples.items()
+        }
+        return result
 
-    # frequent_genres = ['Fiction', 'General', 'Fantasy', 'Romance', 'Adventure']
+    # Preprocess all Dataset splits
+    dataset_dict = {}
+    for split in ['train', 'valid', 'test']:
+        dataset_dict[split] = BookcorpusopenGenreAdapterDataset(
+                                        data_args, split, tokenizer, genre=data_args.genre,
+                                        adapter_id=data_args.adapter_id, sample_row=200,
+                                        match_up_to_n_genres=data_args.match_up_to_n_genres,
+                                        max_seq_len=model_args.max_seq_len)
 
-    train_dataset = BookcorpusopenGenreAdapterDataset(data_args, 'train', tokenizer, genre=data_args.genre,
-                                                      adapter_id=data_args.adapter_id, block_size=1024,
-                                                      sample_row=200,
-                                                      match_up_to_n_genres=data_args.match_up_to_n_genres,
-                                                      max_seq_len=512)
-
-    valid_dataset = BookcorpusopenGenreAdapterDataset(data_args, 'valid', tokenizer, genre=data_args.genre,
-                                                      adapter_id=data_args.adapter_id, block_size=1024,
-                                                      sample_row=200,
-                                                      match_up_to_n_genres=data_args.match_up_to_n_genres,
-                                                      max_seq_len=512)
+        dataset_dict[split].dataset = dataset_dict[split].dataset.map(
+            group_texts,
+            batched=True,
+            num_proc=data_args.preprocessing_num_workers,
+            load_from_cache_file=True,
+            desc=f"Grouping texts in chunks of {model_args.max_seq_len}",
+        )
     
     def preprocess_logits_for_metrics(logits, labels):
         if isinstance(logits, tuple):
@@ -215,8 +237,8 @@ def run(model_args, data_args, training_args):
     print('Preparing Trainer...')
      # Initialize Trainer
     trainer = Trainer(
-        train_dataset=train_dataset,
-        eval_dataset=valid_dataset,
+        train_dataset=dataset_dict['train'],
+        eval_dataset=dataset_dict['valid'],
         model=model,
         data_collator=default_data_collator,
         args=training_args,
@@ -225,13 +247,6 @@ def run(model_args, data_args, training_args):
     )
     
     # trainer = Trainer(
-    #     train_dataset=train_dataset,
-    #     eval_dataset=valid_dataset,
-    #     model=model,
-    #     data_collator=default_data_collator,
-    #     args=training_args,
-    #     compute_metrics=compute_metrics if training_args.do_eval else None,
-    #     preprocess_logits_for_metrics=preprocess_logits_for_metrics if training_args.do_eval else None,
     #     callbacks=[EarlyStoppingCallback(early_stopping_patience=5)]
     # )
     
@@ -270,7 +285,6 @@ def run(model_args, data_args, training_args):
         trainer.log_metrics("train", metrics)
         trainer.save_metrics("train", metrics)
         trainer.save_state()
-
     
     ###
     # Evaluation Phase

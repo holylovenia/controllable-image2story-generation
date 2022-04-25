@@ -15,6 +15,10 @@ class ModelArguments:
     load_checkpoint_adapter: Optional[str] = field(
         default="", metadata={"help": "Path to adapter checkpoint."}
     )
+    max_seq_len: Optional[int] = field(
+        default=512,
+        metadata={"help": "Maximum sequence length the model can process."},
+    )
 
 @dataclass
 class DataArguments:
