@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 class BookcorpusopenGenreAdapterDataset(Dataset):
     def __init__(self, data_args, split, tokenizer, genre=None, adapter_id=-1,
                          sample_row=100, match_up_to_n_genres=None, truncate=True, 
-                         max_seq_len=512, add_special_tokens = True,
+                         max_seq_len=512, add_special_tokens=True,
                          *args, **kwargs):
         super(BookcorpusopenGenreAdapterDataset, self).__init__(*args, **kwargs)
         """
@@ -77,8 +77,8 @@ class BookcorpusopenGenreAdapterDataset(Dataset):
             match_up_to_n_genres: int, how many of the firsts bookcorpusopen genres entries 
                                     is considered as a genre to match with the genre input.
                                     None defaults to use all bookcorpusopen genres to match.
-            sample_row: int, set the int number to sample the dataset, None means using 
-                        all the datasets samples available
+            sample_row: int, set the int number to sample the dataset, 
+                        None means using all the datasets samples available
             match_up_to_n_genres
             
         Returns:
@@ -104,6 +104,24 @@ class BookcorpusopenGenreAdapterDataset(Dataset):
                                           add_special_tokens=self.add_special_tokens)
             return tokenized
         
+        # Main data processing function that will concatenate all texts 
+        # from our dataset and generate chunks of max_seq_len.
+        def group_texts(examples):
+            # Concatenate all texts.
+            concatenated_examples = {k: list(chain(*examples[k])) for k in examples.keys()}
+            total_length = len(concatenated_examples[list(examples.keys())[0]])
+            # We drop the small remainder, we could add padding if the model supported 
+            # it instead of this drop, you can customize this part to your needs.
+            if total_length >= self.max_seq_len:
+                total_length = (total_length // self.max_seq_len) * self.max_seq_len
+            # Split by chunks of max_len.
+            result = {
+                k: [t[i : i + self.max_seq_len] \
+                    for i in range(0, total_length, self.max_seq_len)]
+                for k, t in concatenated_examples.items()
+            }
+            return result
+        
         # load bookcorpusopen from arrow file
         datasets = DatasetDict()
         print('Loading train, validation, test dataset...')
@@ -126,8 +144,16 @@ class BookcorpusopenGenreAdapterDataset(Dataset):
             load_from_cache_file=True
         )
         print(split, 'split tokenized')
+        
+        group_concatted_dataset = tokenized_dataset.map(
+                                        group_texts,
+                                        batched=True,
+                                        num_proc=self.preprocessing_num_workers,
+                                        load_from_cache_file=True,
+                                        desc=f"Grouping texts in chunks of {self.max_seq_len}",
+                                    )
                                 
-        return tokenized_dataset
+        return group_concatted_dataset
 
     def __getitem__(self, index):
             
@@ -181,41 +207,15 @@ def run(model_args, data_args, training_args):
             p.requires_grad = False
     parameters_to_update = [p for n, p in model.named_parameters() if "adapter" in str(n)]
     print('GPT2 param frozen, Adapter is trainable and initialized with AdamW')
-    
-    # Main data processing function that will concatenate all texts 
-    # from our dataset and generate chunks of max_seq_len.
-    def group_texts(examples):
-        # Concatenate all texts.
-        concatenated_examples = {k: list(chain(*examples[k])) for k in examples.keys()}
-        total_length = len(concatenated_examples[list(examples.keys())[0]])
-        # We drop the small remainder, we could add padding if the model supported 
-        # it instead of this drop, you can customize this part to your needs.
-        if total_length >= model_args.max_seq_len:
-            total_length = (total_length // model_args.max_seq_len) * model_args.max_seq_len
-        # Split by chunks of max_len.
-        result = {
-            k: [t[i : i + model_args.max_seq_len] \
-                for i in range(0, total_length, model_args.max_seq_len)]
-            for k, t in concatenated_examples.items()
-        }
-        return result
 
-    # Preprocess all Dataset splits
+    # Load the preprocessed dataset splits
     dataset_dict = {}
     for split in ['train', 'valid', 'test']:
         dataset_dict[split] = BookcorpusopenGenreAdapterDataset(
                                         data_args, split, tokenizer, genre=data_args.genre,
-                                        adapter_id=data_args.adapter_id, sample_row=200,
+                                        adapter_id=data_args.adapter_id, sample_row=data_args.sample_row,
                                         match_up_to_n_genres=data_args.match_up_to_n_genres,
                                         max_seq_len=model_args.max_seq_len)
-
-        dataset_dict[split].dataset = dataset_dict[split].dataset.map(
-            group_texts,
-            batched=True,
-            num_proc=data_args.preprocessing_num_workers,
-            load_from_cache_file=True,
-            desc=f"Grouping texts in chunks of {model_args.max_seq_len}",
-        )
     
     def preprocess_logits_for_metrics(logits, labels):
         if isinstance(logits, tuple):

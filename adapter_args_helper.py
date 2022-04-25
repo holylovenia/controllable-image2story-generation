@@ -51,6 +51,10 @@ class DataArguments:
                            is considered as a genre to match with the genre input.\
                            None defaults to use all bookcorpusopen genres to match."},
     )
+    sample_row: Optional[str] = field(
+        default=None, metadata={"help": "set the int number to sample the dataset,\
+                                         None means using all the datasets samples available"}
+    )
 
 @dataclass
 class TrainingArguments(TrainingArguments):

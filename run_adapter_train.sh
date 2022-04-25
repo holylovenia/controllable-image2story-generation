@@ -3,7 +3,8 @@ CUDA_VISIBLE_DEVICES=2 python adapter_train.py \
    --load_checkpoint_adapter="" \
    --genre="Fiction" --adapter_id=1 \
    --match_up_to_n_genres=3 \
-   --max_seq_len=256 \
+   --max_seq_len=1024 \
+   --sample_row=200 \
    --dataset_path="/home/bryan/datasets/bookcorpusopen/bookcorpusopen_chunked.arrow" \
    --preprocessing_num_workers=8 --bookcorpusopen_story_column_name=chunk \
    --per_device_train_batch_size=1 --per_device_eval_batch_size=1 \
