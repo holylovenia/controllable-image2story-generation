@@ -15,3 +15,12 @@ How to:
     3. `mv PPCM/models/dialoGPT/* ppcm_models/dialoGPT/`
 4. In the `run_adapter_train.sh` change the dataset_path to __`your/own/path`__
 5. Run `bash run_adapter_train.sh` to train the adapter with the designated book genres
+6. Post training, load the model using, e.g.:
+    ```python
+    model_args.model_path = f'ppcm_models/dialoGPT/{model_args.model_size}/'
+    config = GPT2Config.from_json_file(os.path.join(model_args.model_path, 'config.json'))
+    tokenizer = GPT2Tokenizer.from_pretrained(model_args.model_path)
+
+    path = './save/model_run_name/pytorch_model.bin'
+    model = load_model_recursive(GPT2LMHeadModel(config), path, model_args, verbose=True)
+    ```
