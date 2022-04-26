@@ -250,11 +250,8 @@ def run(model_args, data_args, training_args):
         args=training_args,
         compute_metrics=compute_metrics if training_args.do_eval else None,
         preprocess_logits_for_metrics=preprocess_logits_for_metrics if training_args.do_eval else None,
+        callbacks=[EarlyStoppingCallback(early_stopping_patience=training_args.early_stopping_patience)]
     )
-    
-    # trainer = Trainer(
-    #     callbacks=[EarlyStoppingCallback(early_stopping_patience=5)]
-    # )
     
     ###
     # Training Phase
@@ -283,7 +280,26 @@ def run(model_args, data_args, training_args):
         elif last_checkpoint is not None:
             checkpoint = last_checkpoint
         train_result = trainer.train(resume_from_checkpoint=checkpoint)
-        trainer.save_model()  # Saves the tokenizer too for easy upload
+        
+        ### Saving
+        folder_path = training_args.output_dir
+        run_name = 'GPT2{}w_adapter_id{}_genre{}_matched{}_sample{}_maxseql{}_bs{}_lr{}_{}epoch_wd{}_ws{}'\
+                        .format(model_args.model_size,
+                                data_args.adapter_id,
+                                data_args.genre,
+                                data_args.match_up_to_n_genres,
+                                data_args.sample_row,
+                                data_args.datasets,
+                                model_args.max_seq_len,
+                                training_args.per_device_train_batch_size,
+                                training_args.learning_rate,
+                                training_args.num_train_epochs,
+                                training_args.weight_decay,
+                                training_args.warmup_steps)
+        
+        if not os.path.exists(folder_path):
+            os.makedirs(folder_path, exist_ok=True)
+        trainer.save_model(folder_path + run_name) # Saves the tokenizer too for easy upload
 
         metrics = train_result.metrics
         metrics["train_samples"] = len(preprocessed_datasets["train"])

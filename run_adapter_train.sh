@@ -1,7 +1,7 @@
 CUDA_VISIBLE_DEVICES=2 python adapter_train.py \
    --model_size="medium" \
    --load_checkpoint_adapter="" \
-   --genre="Fiction" --adapter_id=1 \
+   --genre="Fiction" --adapter_id=0 \
    --match_up_to_n_genres=3 \
    --max_seq_len=256 \
    --sample_row=2000 \
@@ -16,3 +16,5 @@ CUDA_VISIBLE_DEVICES=2 python adapter_train.py \
    --save_strategy=epoch --save_steps=1 --save_total_limit=3 \
    --do_train=True --do_eval=True \
    --overwrite_output_dir=True \
+   --output_dir='./save/' \
+   --early_stopping_patience=5

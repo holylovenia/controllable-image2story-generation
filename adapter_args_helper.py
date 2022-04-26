@@ -73,3 +73,7 @@ class TrainingArguments(TrainingArguments):
         default=None,
         metadata={"help": "Evaluation accumulation steps"}
     )
+    early_stopping_patience: Optional[int] = field(
+        default=5,
+        metadata={"help": "Early stopping patience for EarlyStoppingCallback"}
+    )
