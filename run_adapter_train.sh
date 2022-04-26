@@ -11,8 +11,8 @@ CUDA_VISIBLE_DEVICES=2 python adapter_train.py \
    --seed=14045 --num_train_epochs=2 --learning_rate=5e-5 \
    --fp16 --fp16_backend=amp \
    --logging_strategy=steps --logging_steps=10 --report_to=tensorboard \
-   --evaluation_strategy=epoch --eval_steps=1 --eval_accumulation_steps=100 \
-   --save_strategy=epoch --save_steps=1 --save_total_limit=3 \
+   --evaluation_strategy=steps --eval_steps=2500 --eval_accumulation_steps=100 \
+   --save_strategy=steps --save_steps=2500 --save_total_limit=3 \
    --do_train=True --do_eval=True \
    --overwrite_output_dir=True \
    --output_dir='./save/' \
