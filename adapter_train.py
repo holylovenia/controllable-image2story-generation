@@ -208,7 +208,6 @@ def run(model_args, data_args, training_args):
     parameters_to_update = [p for n, p in model.named_parameters() if "adapter" in str(n)]
     print('GPT2 param frozen, Adapter is trainable and initialized with AdamW')
 
-
     # Load the preprocessed dataset splits
     dataset_dict = {}
     for split in ['train', 'valid', 'test']:
