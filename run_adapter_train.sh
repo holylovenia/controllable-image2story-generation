@@ -1,9 +1,9 @@
-CUDA_VISIBLE_DEVICES=2 python adapter_train.py \
-   --model_size="medium" \
+CUDA_VISIBLE_DEVICES=4 python adapter_train.py \
+   --model_size="small" \
    --load_checkpoint_adapter="" \
    --genre="Fiction" --adapter_id=0 \
    --match_up_to_n_genres=3 \
-   --max_seq_len=256 \
+   --max_seq_len=512 \
    --dataset_path="/home/bryan/datasets/bookcorpusopen/bookcorpusopen_chunked.arrow" \
    --preprocessing_num_workers=24 --bookcorpusopen_story_column_name=chunk \
    --per_device_train_batch_size=8 --per_device_eval_batch_size=8 \
@@ -11,8 +11,8 @@ CUDA_VISIBLE_DEVICES=2 python adapter_train.py \
    --seed=14045 --num_train_epochs=2 --learning_rate=5e-5 \
    --fp16 --fp16_backend=amp \
    --logging_strategy=steps --logging_steps=10 --report_to=tensorboard \
-   --evaluation_strategy=steps --eval_steps=2500 --eval_accumulation_steps=100 \
-   --save_strategy=steps --save_steps=2500 --save_total_limit=3 \
+   --evaluation_strategy=steps --eval_steps=10000 --eval_accumulation_steps=100 \
+   --save_strategy=steps --save_steps=10000 --save_total_limit=3 \
    --do_train=True --do_eval=True \
    --overwrite_output_dir=True \
    --output_dir='./save/' \
