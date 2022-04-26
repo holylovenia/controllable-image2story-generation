@@ -251,7 +251,7 @@ def run(model_args, data_args, training_args):
     ### Save path
     if not os.path.exists(training_args.output_dir):
         os.makedirs(training_args.output_dir, exist_ok=True)
-    run_name = 'GPT2{}_adapterid{}_genre{}_matched{}_sample{}_maxseql{}_bs{}_lr{}_{}epoch_wd{}_ws{}'\
+    run_name = 'GPT2{}_adapterid{}_genre{}_matched{}_sample{}_maxseqlen{}_bs{}_lr{}_{}epoch_wd{}_ws{}'\
                     .format(model_args.model_size,
                             data_args.adapter_id,
                             data_args.genre,
