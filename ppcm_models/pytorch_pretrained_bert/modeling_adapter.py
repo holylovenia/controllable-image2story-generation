@@ -763,6 +763,7 @@ class GPT2LMHeadModel(GPT2PreTrainedModel):
 
     def forward(self, input_ids, position_ids=None, token_type_ids=None, labels=None, past=None, task_id=-1, kl_weight=0):
         
+        task_id = task_id[0]
         if task_id==-1: # if didn't specify which adapter should be used, use the default one.
             task_id=self.default_task_id
         transformer_outputs = self.transformer(input_ids, position_ids, token_type_ids, past, task_id)
