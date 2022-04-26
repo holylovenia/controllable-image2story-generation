@@ -17,4 +17,4 @@ CUDA_VISIBLE_DEVICES=2 python adapter_train.py \
    --do_train=True --do_eval=True \
    --overwrite_output_dir=True \
    --output_dir='./save/' \
-   --early_stopping_patience=5
+   --early_stopping_patience=5 \

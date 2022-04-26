@@ -77,3 +77,7 @@ class TrainingArguments(TrainingArguments):
         default=5,
         metadata={"help": "Early stopping patience for EarlyStoppingCallback"}
     )
+    load_best_model_at_end: Optional[bool] = field(
+        default=True, 
+        metadata={"help": "Needed for EarlyStoppingCallback"}
+    )
