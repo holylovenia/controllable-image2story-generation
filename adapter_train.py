@@ -134,7 +134,6 @@ class BookcorpusopenGenreAdapterDataset(Dataset):
         dataset = datasets[split].select(np.arange(0,sample_row,1))\
                                 .filter(lambda x: genre_match(x['genre'], genre, match_up_to_n_genres)\
                                         , num_proc=self.preprocessing_num_workers)
-
         
         # Tokenize with huggingface datasets mapping function
         tokenized_dataset = dataset.map(
@@ -187,7 +186,12 @@ def run(model_args, data_args, training_args):
 
     ## Load GPT2 instead of DialoGPT
     print('Load pretrained GPT2')
-    pt_gpt2_model = GPT2Model.from_pretrained('gpt2-medium')
+    if model_args.model_size == 'small':
+        pt_gpt2_model = GPT2Model.from_pretrained('gpt2')
+    elif model_args.model_size == 'medium':
+        pt_gpt2_model = GPT2Model.from_pretrained('gpt2-medium')
+    elif model_args.model_size == 'large':
+        pt_gpt2_model = GPT2Model.from_pretrained('gpt2-large')
 
     model.transformer.wte.weight = pt_gpt2_model.wte.weight
     model.transformer.wpe.weight = pt_gpt2_model.wpe.weight
