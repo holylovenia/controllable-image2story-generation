@@ -122,6 +122,9 @@ class BookcorpusopenGenreAdapterDataset(Dataset):
             }
             return result
         
+        def remove_remainder(input_ids):
+            return len(input_ids) == self.max_seq_len
+        
         # load bookcorpusopen from arrow file
         datasets = DatasetDict()
         print('Loading train, validation, test dataset...')
@@ -151,8 +154,11 @@ class BookcorpusopenGenreAdapterDataset(Dataset):
                                         load_from_cache_file=True,
                                         desc=f"Grouping texts in chunks of {self.max_seq_len}",
                                     )
+        
+        dataset = group_concatted_dataset.filter(lambda x: remove_remainder(x['input_ids'])\
+                                                    , num_proc=self.preprocessing_num_workers)
                                 
-        return group_concatted_dataset
+        return dataset
 
     def __getitem__(self, index):
             
@@ -220,6 +226,11 @@ def run(model_args, data_args, training_args):
                                         adapter_id=data_args.adapter_id, sample_row=data_args.sample_row,
                                         match_up_to_n_genres=data_args.match_up_to_n_genres,
                                         max_seq_len=model_args.max_seq_len)
+        
+        for i in range(len(dataset_dict[split])):
+            input_ids_len = len(dataset_dict[split][i]['input_ids'][0])
+            if input_ids_len < model_args.max_seq_len:
+                print(split, i, input_ids_len)
     
     def preprocess_logits_for_metrics(logits, labels):
         if isinstance(logits, tuple):
