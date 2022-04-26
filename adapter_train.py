@@ -208,6 +208,7 @@ def run(model_args, data_args, training_args):
     parameters_to_update = [p for n, p in model.named_parameters() if "adapter" in str(n)]
     print('GPT2 param frozen, Adapter is trainable and initialized with AdamW')
 
+
     # Load the preprocessed dataset splits
     dataset_dict = {}
     for split in ['train', 'valid', 'test']:
@@ -216,6 +217,11 @@ def run(model_args, data_args, training_args):
                                         adapter_id=data_args.adapter_id, sample_row=data_args.sample_row,
                                         match_up_to_n_genres=data_args.match_up_to_n_genres,
                                         max_seq_len=model_args.max_seq_len)
+        # # checker
+        # for i in range(len(dataset_dict[split])):
+        #     input_ids_len = len(dataset_dict[split][i]['input_ids'][0])
+        #     if input_ids_len < model_args.max_seq_len:
+        #         print(split, i, input_ids_len)
     
     def preprocess_logits_for_metrics(logits, labels):
         if isinstance(logits, tuple):

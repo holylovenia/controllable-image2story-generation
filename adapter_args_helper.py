@@ -49,14 +49,15 @@ class DataArguments:
     )
     match_up_to_n_genres: Optional[int] = field(
         default=None,
-        metadata={"help": "how many of the firsts bookcorpusopen genres entries\
+        metadata={"help": "How many of the firsts bookcorpusopen genres entries\
                            is considered as a genre to match with the genre input.\
                            None defaults to use all bookcorpusopen genres to match."},
     )
     sample_row: Optional[int] = field(
         default=None, 
-        metadata={"help": "set the int number to sample the dataset,\
-                           None means using all the datasets samples available"}
+        metadata={"help": "Set the int number to sample the dataset,\
+                           None means using all the datasets samples available,\
+                           Setting it too small (e.g. 200) triggers batching error"}
     )
 
 @dataclass
