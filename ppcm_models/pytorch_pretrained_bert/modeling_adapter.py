@@ -761,7 +761,20 @@ class GPT2LMHeadModel(GPT2PreTrainedModel):
         """
         self.lm_head.set_embeddings_weights(self.transformer.wte.weight)
 
-    def forward(self, input_ids, position_ids=None, token_type_ids=None, labels=None, past=None, task_id=-1, kl_weight=0):
+    def forward(self, 
+                input_ids, 
+                attention_mask=None,
+                position_ids=None,
+                token_type_ids=None, 
+                labels=None, 
+                past=None, 
+                task_id=-1, 
+                kl_weight=0,
+                return_dict=None,):
+        
+        # force to True, following GPT2Config from AutoModelForCausalLM.from_pretrained('gpt2')
+        return_dict = True
+        # return_dict = return_dict if return_dict is not None else self.config.use_return_dict
         
         task_id = task_id[0]
         if task_id==-1: # if didn't specify which adapter should be used, use the default one.
@@ -775,14 +788,27 @@ class GPT2LMHeadModel(GPT2PreTrainedModel):
         loss = None
         if labels is not None:
             
+            # print(lm_logits.shape)
+            
             # Shift so that tokens < n predict n
-            shift_logits = lm_logits[:, :-1].contiguous()
-            shift_labels = labels[:, 1:].contiguous()
+            # shift_logits = lm_logits[:, :-1].contiguous()
+            # print('shift_logits2', shift_logits.shape)
+            
+            shift_logits = lm_logits[..., :-1, :].contiguous()
+#             print('shift_logits1', shift_logits.shape)
+            
+
+#             shift_labels = labels[:, 1:].contiguous()
+#             print('shift_labels2', shift_labels.shape)
+            
+            shift_labels = labels[..., 1:].contiguous()
+            # print('shift_labels1', shift_labels.shape)
+            
 
             # Flatten the tokens
             loss_fct = CrossEntropyLoss(ignore_index=-100)
-            loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)),
-                            shift_labels.view(-1))
+            loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
+            
             # if use kl loss to constraint the model
             if kl_weight>0:
                 hidden_states, _ = self.transformer(input_ids, position_ids, token_type_ids, past)
@@ -798,6 +824,10 @@ class GPT2LMHeadModel(GPT2PreTrainedModel):
                 kl_loss = kl_fct( source_dist , target_dist )
                 # print(kl_loss.item())
                 loss += kl_weight*kl_loss
+                
+        if not return_dict:
+            output = (lm_logits,) + transformer_outputs[1:]
+            return ((loss,) + output) if loss is not None else output
 
         return CausalLMOutputWithCrossAttentions(
             loss=loss,
