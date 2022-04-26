@@ -217,11 +217,6 @@ def run(model_args, data_args, training_args):
                                         adapter_id=data_args.adapter_id, sample_row=data_args.sample_row,
                                         match_up_to_n_genres=data_args.match_up_to_n_genres,
                                         max_seq_len=model_args.max_seq_len)
-        # # checker
-        # for i in range(len(dataset_dict[split])):
-        #     input_ids_len = len(dataset_dict[split][i]['input_ids'][0])
-        #     if input_ids_len < model_args.max_seq_len:
-        #         print(split, i, input_ids_len)
     
     def preprocess_logits_for_metrics(logits, labels):
         if isinstance(logits, tuple):
@@ -325,7 +320,7 @@ def run(model_args, data_args, training_args):
         trainer.log_metrics("eval", metrics)
         trainer.save_metrics("eval", metrics)
 
-    kwargs = {"finetuned_from ": "GPT2"+model_args.model_size, "tasks": "text-generation"}
+    kwargs = {"finetuned_from": "GPT2"+model_args.model_size, "tasks": "text-generation"}
     data_args.dataset_name = "Bookcorpusopen"
     data_args.dataset_config_name = "Chunked"
     if data_args.dataset_name is not None:
