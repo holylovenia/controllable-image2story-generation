@@ -253,6 +253,23 @@ def run(model_args, data_args, training_args):
         callbacks=[EarlyStoppingCallback(early_stopping_patience=training_args.early_stopping_patience)]
     )
     
+    ### Save path
+    if not os.path.exists(training_args.output_dir):
+        os.makedirs(training_args.output_dir, exist_ok=True)
+    run_name = 'GPT2{}_adapterid{}_genre{}_matched{}_sample{}_maxseql{}_bs{}_lr{}_{}epoch_wd{}_ws{}'\
+                    .format(model_args.model_size,
+                            data_args.adapter_id,
+                            data_args.genre,
+                            data_args.match_up_to_n_genres,
+                            data_args.sample_row,
+                            model_args.max_seq_len,
+                            training_args.per_device_train_batch_size,
+                            training_args.learning_rate,
+                            training_args.num_train_epochs,
+                            training_args.weight_decay,
+                            training_args.warmup_steps)
+    training_args.output_dir = training_args.output_dir + run_name
+    
     ###
     # Training Phase
     ###
@@ -282,27 +299,10 @@ def run(model_args, data_args, training_args):
         train_result = trainer.train(resume_from_checkpoint=checkpoint)
         
         ### Saving
-        folder_path = training_args.output_dir
-        run_name = 'GPT2{}w_adapter_id{}_genre{}_matched{}_sample{}_maxseql{}_bs{}_lr{}_{}epoch_wd{}_ws{}'\
-                        .format(model_args.model_size,
-                                data_args.adapter_id,
-                                data_args.genre,
-                                data_args.match_up_to_n_genres,
-                                data_args.sample_row,
-                                data_args.datasets,
-                                model_args.max_seq_len,
-                                training_args.per_device_train_batch_size,
-                                training_args.learning_rate,
-                                training_args.num_train_epochs,
-                                training_args.weight_decay,
-                                training_args.warmup_steps)
-        
-        if not os.path.exists(folder_path):
-            os.makedirs(folder_path, exist_ok=True)
-        trainer.save_model(folder_path + run_name) # Saves the tokenizer too for easy upload
+        trainer.save_model() # Saves the tokenizer too for easy upload
 
         metrics = train_result.metrics
-        metrics["train_samples"] = len(preprocessed_datasets["train"])
+        metrics["train_samples"] = len(dataset_dict["train"])
 
         trainer.log_metrics("train", metrics)
         trainer.save_metrics("train", metrics)
@@ -315,7 +315,7 @@ def run(model_args, data_args, training_args):
         print("*** Evaluation Phase ***")
 
         metrics = trainer.evaluate()
-        metrics["eval_samples"] = len(preprocessed_datasets["valid"])
+        metrics["eval_samples"] = len(dataset_dict["valid"])
         try:
             perplexity = math.exp(metrics["eval_loss"])
         except OverflowError:
@@ -325,7 +325,9 @@ def run(model_args, data_args, training_args):
         trainer.log_metrics("eval", metrics)
         trainer.save_metrics("eval", metrics)
 
-    kwargs = {"finetuned_from": model_args.model_name_or_path, "tasks": "text-generation"}
+    kwargs = {"finetuned_from ": "GPT2"+model_args.model_size, "tasks": "text-generation"}
+    data_args.dataset_name = "Bookcorpusopen"
+    data_args.dataset_config_name = "Chunked"
     if data_args.dataset_name is not None:
         kwargs["dataset_tags"] = data_args.dataset_name
         if data_args.dataset_config_name is not None:
