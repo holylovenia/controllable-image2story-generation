@@ -17,6 +17,9 @@ How to:
 5. Run `bash run_adapter_train.sh` to train the adapter with the designated book genres
 6. Post training, load the model using, e.g.:
     ```python
+    from transformers import GPT2Tokenizer
+    from ppcm_models.pytorch_pretrained_bert.modeling_adapter import GPT2LMHeadModel, GPT2Config
+    
     model_args.model_path = f'ppcm_models/dialoGPT/{model_args.model_size}/'
     config = GPT2Config.from_json_file(os.path.join(model_args.model_path, 'config.json'))
     tokenizer = GPT2Tokenizer.from_pretrained(model_args.model_path)
