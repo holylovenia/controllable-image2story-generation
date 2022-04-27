@@ -25,7 +25,12 @@ How to:
     model_args.model_path = f'ppcm_models/dialoGPT/small/'
     config = GPT2Config.from_json_file(os.path.join(model_args.model_path, 'config.json'))
     tokenizer = GPT2Tokenizer.from_pretrained(model_args.model_path)
-
+    
     path = './save/model_run_name/pytorch_model.bin'
     model = load_model_recursive(GPT2LMHeadModel(config), path, model_args, verbose=True)
+    
+    inputs = tokenizer("Hello, my dog is cute", return_tensors="pt")
+    outputs = model(inputs['input_ids'], task_id=[0])
+    # or
+    outputs = model.transformer(inputs['input_ids'], task_id=0)
     ```
