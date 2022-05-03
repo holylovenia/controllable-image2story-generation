@@ -15,7 +15,7 @@ How to:
     3. `mv PPCM/models/dialoGPT/* ppcm_models/dialoGPT/`
 4. In the `run_adapter_train.sh` change the dataset_path to __`your/own/path`__
 5. Run `bash run_adapter_train.sh` to train the adapter with the designated book genres
-6. Post training, load the model using, e.g.:
+6. Post training, predict and get the outputs using, e.g.:
     ```python
     import os
     from transformers import GPT2Tokenizer, TrainingArguments
