@@ -34,6 +34,8 @@ import torch.nn as nn
 from torch.nn import CrossEntropyLoss
 from torch.nn.parameter import Parameter
 
+from transformers import GPT2Config
+from transformers.generation_utils import GenerationMixin
 from .file_utils import cached_path, CONFIG_NAME, WEIGHTS_NAME
 from .modeling import BertLayerNorm as LayerNorm
 from IPython import embed
@@ -147,6 +149,9 @@ class GPT2Config(object):
             self.n_head = n_head
             self.layer_norm_epsilon = layer_norm_epsilon
             self.initializer_range = initializer_range
+            
+            ### for the sake of using .generate()
+            self.is_encoder_decoder=False
         else:
             raise ValueError(
                 "First argument must be either a vocabulary size (int)"
@@ -361,7 +366,7 @@ class GPT2MultipleChoiceHead(nn.Module):
         return multiple_choice_logits
 
 
-class GPT2PreTrainedModel(nn.Module):
+class GPT2PreTrainedModel(nn.Module, GenerationMixin):
     """ An abstract class to handle weights initialization and
         a simple interface for dowloading and loading pretrained models.
     """
@@ -756,6 +761,10 @@ class GPT2LMHeadModel(GPT2PreTrainedModel):
         self.lm_head = GPT2LMHead(self.transformer.wte.weight, config)
         self.apply(self.init_weights)
         self.default_task_id = default_task_id
+        
+        ### for the sake of using .generate()
+        self.main_input_name='input_ids'
+        self.device='cpu'
     def set_tied(self):
         """ Make sure we are sharing the embeddings
         """
@@ -768,9 +777,13 @@ class GPT2LMHeadModel(GPT2PreTrainedModel):
                 token_type_ids=None, 
                 labels=None, 
                 past=None, 
-                task_id=-1, 
+                task_id=[0], 
                 kl_weight=0,
-                return_dict=None,):
+                return_dict=None,
+                output_attentions=None,
+                output_hidden_states=None):
+        
+        # output_hidden_states and output_attentions are for the sake of using model.generate()
         
         # force to True, following GPT2Config from AutoModelForCausalLM.from_pretrained('gpt2')
         return_dict = True
