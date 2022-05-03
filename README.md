@@ -34,23 +34,29 @@ How to:
     # or
     outputs = model.transformer(inputs['input_ids'], task_id=0)
     ```
-7. Next, generate using, e.g.:
+7. Or generate using, e.g.:
     ```python
+    import os
+    import numpy as np
+    import torch
+    import torch.nn.functional as F
+    from transformers import GPT2Tokenizer, TrainingArguments
+    from utils.helper import load_model_recursive
+    from ppcm_models.pytorch_pretrained_bert.modeling_adapter import GPT2LMHeadModel, GPT2Config
+    
+    model_args.model_path = f'ppcm_models/dialoGPT/small/'
+    config = GPT2Config.from_json_file(os.path.join(model_args.model_path, 'config.json'))
+    tokenizer = GPT2Tokenizer.from_pretrained(model_args.model_path)
+    
     model_run_names = ['GPT2small_adapterid0_genreAction_matched3_sampleNone_maxseqlen512_bs8_lr5e-05_10.0epoch_wd0.0_ws0',
-                   'GPT2small_adapterid0_genreAction_matched3_sampleNone_maxseqlen512_bs8_lr5e-05_2.0epoch_wd0.0_ws0',
-                   'GPT2small_adapterid0_genreMystery_matched3_sampleNone_maxseqlen512_bs8_lr0.0005_5.0epoch_wd0.0_ws0',
-                   'GPT2small_adapterid0_genreRomance_matched3_sampleNone_maxseqlen512_bs8_lr5e-05_2.0epoch_wd0.0_ws0']
+                       'GPT2small_adapterid0_genreAction_matched3_sampleNone_maxseqlen512_bs8_lr5e-05_2.0epoch_wd0.0_ws0',
+                       'GPT2small_adapterid0_genreMystery_matched3_sampleNone_maxseqlen512_bs8_lr0.0005_5.0epoch_wd0.0_ws0',
+                       'GPT2small_adapterid0_genreRomance_matched3_sampleNone_maxseqlen512_bs8_lr5e-05_2.0epoch_wd0.0_ws0']
 
     for i, model_run_name in enumerate(model_run_names):
 
         path = './save/'+model_run_name+'/pytorch_model.bin'
         model = load_model_recursive(GPT2LMHeadModel(config), path, model_args, verbose=True)
-
-        # # use this to generate outputs
-        # inputs = tokenizer("Hello, my dog is cute", return_tensors="pt")
-        # outputs = model(inputs['input_ids'], task_id=[0])
-        # # or
-        # outputs = model.transformer(inputs['input_ids'], task_id=0)
 
         length = 100
         text = "Hello, my dog is cute"
