@@ -6,7 +6,7 @@ from args_helper import (
 )
 from datasets import load_from_disk, load_metric, set_caching_enabled, DatasetDict
 from data_utils import load_dataset
-from models import ClipCaptionModel
+from models import ClipCaptionModel, ClipCaptionPrefix
 from torch.nn.functional import cross_entropy
 from tqdm import tqdm
 from transformers import (
@@ -18,14 +18,18 @@ from transformers import (
     GPT2LMHeadModel,
     EarlyStoppingCallback,
     HfArgumentParser,
+    LogitsProcessor,
+    LogitsProcessorList,
     Trainer
 )
 from transformers.trainer_utils import get_last_checkpoint, is_main_process
 
 import logging
+import json
 import numpy as np
 import os
 import pandas as pd
+import random
 import sys
 import torch
 import transformers
@@ -56,12 +60,12 @@ def run(model_args, data_args, training_args):
     preprocessed_datasets = DatasetDict()
     print('Loading train, validation, test dataset...')
     preprocessed_datasets = load_dataset(data_args.cache_dir_path)
-    preprocessed_datasets["test"] = preprocessed_datasets["test"].shard(index=0, num_shards=1000)
+    # preprocessed_datasets["test"] = preprocessed_datasets["test"].shard(index=0, num_shards=500)
 
     print('Preprocess dataset...')
 
     # Load model and processor
-    tokenizer = GPT2Tokenizer.from_pretrained(model_args.model_name_or_path)
+    tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
 
     # Preprocess image sample and label text
     print('Vectorize dataset...')
@@ -136,8 +140,17 @@ def run(model_args, data_args, training_args):
             prefixes = torch.stack(data["clip_embeddings"][0], dim=1).to(device).float()
             prefix_embeddings = model.get_prefix_projections(prefixes)
 
-            def generate_text_using_beam_search(model, tokenizer, beam_size: int = 5,
-                                prompt=None, embeddings=None, entry_length=70, temperature=1., stop_token: str = '.'):
+            def generate_text_using_beam_search(
+                model,
+                tokenizer,
+                beam_size: int = 5,
+                prompt=None,
+                embeddings=None,
+                input_ids_seq_length=70,
+                temperature=1.,
+                k: int = None,
+                stop_token: str = '<|endoftext|>',
+                *args, **kwargs):
 
                 stop_token_index = tokenizer.encode(stop_token)[0]
                 tokens = None
@@ -145,6 +158,9 @@ def run(model_args, data_args, training_args):
                 device = next(model.parameters()).device
                 seq_lengths = torch.ones(beam_size, device=device)
                 is_stopped = torch.zeros(beam_size, device=device, dtype=torch.bool)
+                k = beam_size if k is None else k
+
+                logits_processor = model.decoder._get_logits_processor(input_ids_seq_length=input_ids_seq_length, *args, **kwargs)
                 
                 with torch.no_grad():
                     if embeddings is not None:
@@ -155,13 +171,26 @@ def run(model_args, data_args, training_args):
                             tokens = tokens.unsqueeze(0).to(device)
                             generated_text_embeddings = model.decoder.transformer.wte(tokens)
 
-                    for i in range(entry_length):
+                    for i in range(input_ids_seq_length):
                         outputs = model.decoder(inputs_embeds=generated_text_embeddings)
                         logits = outputs.logits
                         logits = logits[:, -1, :] / (temperature if temperature > 0 else 1.0)
                         logits = logits.softmax(-1).log()
                         if scores is None:
-                            scores, next_tokens = logits.topk(beam_size, -1)
+                            # pre-process distribution
+                            scores = logits_processor(torch.Tensor([]).to(device), logits)
+                            # argmax
+                            scores, next_tokens = scores.topk(k, -1)
+                            indices = torch.randperm(k)[:beam_size]
+                            scores = scores[0][indices].expand(1, beam_size)
+                            next_tokens = next_tokens[0][indices].expand(1, beam_size)
+
+                            # # old
+                            # scores, next_tokens = logits.topk(k, -1)
+                            # indices = torch.randperm(k)[:beam_size]
+                            # scores = scores[0][indices].expand(1, beam_size)
+                            # next_tokens = next_tokens[0][indices].expand(1, beam_size)
+
                             generated_text_embeddings = generated_text_embeddings.expand(beam_size, *generated_text_embeddings.shape[1:])
                             next_tokens, scores = next_tokens.permute(1, 0), scores.squeeze(0)
                             if tokens is None:
@@ -172,10 +201,24 @@ def run(model_args, data_args, training_args):
                         else:
                             logits[is_stopped] = -float(np.inf)
                             logits[is_stopped, 0] = 0
+                            # pre-process distribution
+                            logits = logits_processor(tokens, logits)
                             scores_sum = scores[:, None] + logits
                             seq_lengths[~is_stopped] += 1
                             scores_sum_average = scores_sum / seq_lengths[:, None]
-                            scores_sum_average, next_tokens = scores_sum_average.view(-1).topk(beam_size, -1)
+
+                            # argmax
+                            scores_sum_average, next_tokens = scores_sum_average.view(-1).topk(k, -1)
+                            indices = torch.randperm(k)[:beam_size]
+                            scores_sum_average = scores_sum_average[indices]
+                            next_tokens = next_tokens[indices]
+
+                            # # old
+                            # scores_sum_average, next_tokens = scores_sum_average.view(-1).topk(k, -1)
+                            # indices = torch.randperm(k)[:beam_size]
+                            # scores_sum_average = scores_sum_average[indices]
+                            # next_tokens = next_tokens[indices]
+
                             next_tokens_source = next_tokens // scores_sum.shape[1]
                             seq_lengths = seq_lengths[next_tokens_source]
                             next_tokens = next_tokens % scores_sum.shape[1]
@@ -199,18 +242,73 @@ def run(model_args, data_args, training_args):
 
             test_results["id"].append(data["image_path"][0])
             test_results["gold_caption"].append(tokenizer.batch_decode(sequences=input_ids)[0].replace("!", ""))
-            generated_texts = generate_text_using_beam_search(model, tokenizer, embeddings=prefix_embeddings)
+            generated_texts = generate_text_using_beam_search(
+                model,
+                tokenizer,
+                embeddings=prefix_embeddings,
+                k=10,
+                temperature=0.8,
+                repetition_penalty=0.7,
+                no_repeat_ngram_size=4,
+                encoder_no_repeat_ngram_size=None,
+                encoder_input_ids=None,
+                bad_words_ids=None,
+                min_length=None,
+                max_length=None,
+                eos_token_id=None,
+                forced_bos_token_id=None,
+                forced_eos_token_id=None,
+                prefix_allowed_tokens_fn=None,
+                num_beams=5,
+                num_beam_groups=None,
+                diversity_penalty=None,
+                remove_invalid_values=None,
+                exponential_decay_length_penalty=(10, 1.5),
+                input_ids_seq_length=70,
+                logits_processor=LogitsProcessorList())
             for i, text in enumerate(generated_texts):
                 test_results["generated_text_{}".format(i)].append(text)
 
         test_df = pd.DataFrame.from_dict(test_results)
-        # test_df.to_csv(os.path.join(training_args.output_dir, "predict.csv"))
-        test_df.to_csv(os.path.join(training_args.output_dir, "test_predict.csv"))
+        test_df.to_csv(os.path.join(training_args.output_dir, "predict.csv"))
+        # test_df.to_csv(os.path.join(training_args.output_dir, "test_predict.csv"))
+
+        print('Evaluating...')
+        test_measures = {}
+        test_measures["num_samples"] = len(test_df)
+
+        def get_tokenized_texts(texts, wrap_with_list=False):
+            if wrap_with_list:
+                return [[t.split(' ')] for t in texts]
+            else:
+                return [t.split(' ') for t in texts]
+        predictions = get_tokenized_texts(test_results["generated_text_0"])
+        references = get_tokenized_texts(test_results["gold_caption"], wrap_with_list=True)
+        
+        bleu = load_metric("bleu")
+        test_measures["bleu"] = bleu.compute(predictions=predictions, references=references)
+        
+        meteor = load_metric("meteor")
+        test_measures["meteor"] = meteor.compute(predictions=predictions, references=references)
+
+        perplexity = load_metric("perplexity")
+        test_measures["perplexity"] = perplexity.compute(input_texts=predictions, model_id='gpt2')
+        
+        print(test_measures)
+        with open("{}/eval_results.json".format(training_args.output_dir), "w", encoding="utf-8") as f:
+            json.dump(test_measures, f, indent=4)
 
     print('Load model...')
-    model = ClipCaptionModel(model_args.prefix_length, clip_length=model_args.prefix_length_clip, prefix_size=model_args.prefix_dim)
+    if model_args.freeze_decoder:
+        model = ClipCaptionPrefix(
+            model_args.prefix_length, clip_length=model_args.prefix_length_clip,
+            prefix_size=model_args.prefix_dim, decoder_name_or_path=model_args.model_name_or_path)
+    else:
+        model = ClipCaptionModel(
+            model_args.prefix_length, clip_length=model_args.prefix_length_clip,
+            prefix_size=model_args.prefix_dim, decoder_name_or_path=model_args.model_name_or_path)
     if os.path.isdir(training_args.output_dir) and training_args.do_eval:
-        model.load_state_dict(torch.load(os.path.join(training_args.output_dir, 'coco_latest.pt')))
+        model.load_state_dict(torch.load(os.path.join(training_args.output_dir, 'coco-099.pt')))
 
     # Initialize training
     predict(preprocessed_datasets, model, model_args, training_args)

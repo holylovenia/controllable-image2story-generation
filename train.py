@@ -6,7 +6,7 @@ from args_helper import (
 )
 from datasets import load_from_disk, load_metric, set_caching_enabled, DatasetDict
 from data_utils import load_dataset
-from models import ClipCaptionModel
+from models import ClipCaptionModel, ClipCaptionPrefix
 from torch.nn.functional import cross_entropy
 from tqdm import tqdm
 from transformers import (
@@ -59,7 +59,7 @@ def run(model_args, data_args, training_args):
     print('Preprocess dataset...')
 
     # Load model and processor
-    tokenizer = GPT2Tokenizer.from_pretrained(model_args.model_name_or_path)
+    tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
 
     # Preprocess image sample and label text
     print('Vectorize dataset...')
@@ -159,7 +159,14 @@ def run(model_args, data_args, training_args):
         return model
 
     print('Load model...')
-    model = ClipCaptionModel(model_args.prefix_length, clip_length=model_args.prefix_length_clip, prefix_size=model_args.prefix_dim)
+    if model_args.freeze_decoder:
+        model = ClipCaptionPrefix(
+            model_args.prefix_length, clip_length=model_args.prefix_length_clip,
+            prefix_size=model_args.prefix_dim, decoder_name_or_path=model_args.model_name_or_path)
+    else:
+        model = ClipCaptionModel(
+            model_args.prefix_length, clip_length=model_args.prefix_length_clip,
+            prefix_size=model_args.prefix_dim, decoder_name_or_path=model_args.model_name_or_path)
 
     # Initialize training
     train(preprocessed_datasets, model, model_args, training_args)

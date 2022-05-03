@@ -22,10 +22,10 @@ class MLP(nn.Module):
         self.model = nn.Sequential(*layers)
 
 class ClipCaptionModel(nn.Module):
-    def __init__(self, prefix_length: int, clip_length: Optional[int] = None, prefix_size: int = 512):
+    def __init__(self, prefix_length: int, clip_length: Optional[int] = None, prefix_size: int = 512, decoder_name_or_path="gpt2"):
         super().__init__()
         self.prefix_length = prefix_length
-        self.decoder = GPT2LMHeadModel.from_pretrained("gpt2")
+        self.decoder = GPT2LMHeadModel.from_pretrained(decoder_name_or_path)
         self.decoder.config.update({"n_positions": 2048})
         self.decoder_embedding_size = self.decoder.transformer.wte.weight.shape[1]
         self.mapping_network = MLP((prefix_size, (self.decoder_embedding_size * prefix_length) // 2,

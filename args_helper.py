@@ -28,6 +28,10 @@ class ModelArguments:
         default=True,
         metadata={"help": "Normalize prefix."},
     )
+    freeze_decoder: Optional[bool] = field(
+        default=True,
+        metadata={"help": "Freeze decoder during training or not."},
+    )
 
 @dataclass
 class DataArguments:
