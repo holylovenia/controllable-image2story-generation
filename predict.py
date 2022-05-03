@@ -164,15 +164,15 @@ def run(model_args, data_args, training_args):
                 
                 with torch.no_grad():
                     if embeddings is not None:
-                        generated_text_embeddings = embeddings
+                        prefix = embeddings
                     else:
                         if tokens is None:
                             tokens = torch.tensor(tokenizer.encode(prompt))
                             tokens = tokens.unsqueeze(0).to(device)
-                            generated_text_embeddings = model.decoder.transformer.wte(tokens)
+                            prefix = model.decoder.transformer.wte(tokens)
 
                     for i in range(input_ids_seq_length):
-                        outputs = model.decoder(inputs_embeds=generated_text_embeddings)
+                        outputs = model.decoder(inputs_embeds=prefix)
                         logits = outputs.logits
                         logits = logits[:, -1, :] / (temperature if temperature > 0 else 1.0)
                         logits = logits.softmax(-1).log()
@@ -191,7 +191,7 @@ def run(model_args, data_args, training_args):
                             # scores = scores[0][indices].expand(1, beam_size)
                             # next_tokens = next_tokens[0][indices].expand(1, beam_size)
 
-                            generated_text_embeddings = generated_text_embeddings.expand(beam_size, *generated_text_embeddings.shape[1:])
+                            prefix = prefix.expand(beam_size, *prefix.shape[1:])
                             next_tokens, scores = next_tokens.permute(1, 0), scores.squeeze(0)
                             if tokens is None:
                                 tokens = next_tokens
@@ -225,11 +225,11 @@ def run(model_args, data_args, training_args):
                             next_tokens = next_tokens.unsqueeze(1)
                             tokens = tokens[next_tokens_source]
                             tokens = torch.cat((tokens, next_tokens), dim=1)
-                            generated_text_embeddings = generated_text_embeddings[next_tokens_source]
+                            prefix = prefix[next_tokens_source]
                             scores = scores_sum_average * seq_lengths
                             is_stopped = is_stopped[next_tokens_source]
-                        next_token_embed = model.decoder.transformer.wte(next_tokens.squeeze()).view(generated_text_embeddings.shape[0], 1, -1)
-                        generated_text_embeddings = torch.cat((generated_text_embeddings, next_token_embed), dim=1)
+                        next_token_embed = model.decoder.transformer.wte(next_tokens.squeeze()).view(prefix.shape[0], 1, -1)
+                        prefix = torch.cat((prefix, next_token_embed), dim=1)
                         is_stopped = is_stopped + next_tokens.eq(stop_token_index).squeeze()
                         if is_stopped.all():
                             break
@@ -249,11 +249,11 @@ def run(model_args, data_args, training_args):
                 k=10,
                 temperature=0.8,
                 repetition_penalty=0.7,
-                no_repeat_ngram_size=4,
+                no_repeat_ngram_size=3,
                 encoder_no_repeat_ngram_size=None,
                 encoder_input_ids=None,
                 bad_words_ids=None,
-                min_length=None,
+                min_length=128,
                 max_length=None,
                 eos_token_id=None,
                 forced_bos_token_id=None,
@@ -263,7 +263,7 @@ def run(model_args, data_args, training_args):
                 num_beam_groups=None,
                 diversity_penalty=None,
                 remove_invalid_values=None,
-                exponential_decay_length_penalty=(10, 1.5),
+                exponential_decay_length_penalty=(10, 1.7),
                 input_ids_seq_length=70,
                 logits_processor=LogitsProcessorList())
             for i, text in enumerate(generated_texts):
