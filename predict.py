@@ -46,7 +46,7 @@ def run(model_args, data_args, training_args):
     ###
     # Prepare Processor & Model    
     ###
-    training_args.output_dir="{}/{}".format(training_args.output_dir, model_args.model_name_or_path)
+    training_args.output_dir = model_args.model_name_or_path
 
     os.makedirs(training_args.output_dir, exist_ok=True)
 
@@ -185,12 +185,6 @@ def run(model_args, data_args, training_args):
                             scores = scores[0][indices].expand(1, beam_size)
                             next_tokens = next_tokens[0][indices].expand(1, beam_size)
 
-                            # # old
-                            # scores, next_tokens = logits.topk(k, -1)
-                            # indices = torch.randperm(k)[:beam_size]
-                            # scores = scores[0][indices].expand(1, beam_size)
-                            # next_tokens = next_tokens[0][indices].expand(1, beam_size)
-
                             prefix = prefix.expand(beam_size, *prefix.shape[1:])
                             next_tokens, scores = next_tokens.permute(1, 0), scores.squeeze(0)
                             if tokens is None:
@@ -212,12 +206,6 @@ def run(model_args, data_args, training_args):
                             indices = torch.randperm(k)[:beam_size]
                             scores_sum_average = scores_sum_average[indices]
                             next_tokens = next_tokens[indices]
-
-                            # # old
-                            # scores_sum_average, next_tokens = scores_sum_average.view(-1).topk(k, -1)
-                            # indices = torch.randperm(k)[:beam_size]
-                            # scores_sum_average = scores_sum_average[indices]
-                            # next_tokens = next_tokens[indices]
 
                             next_tokens_source = next_tokens // scores_sum.shape[1]
                             seq_lengths = seq_lengths[next_tokens_source]
@@ -253,7 +241,7 @@ def run(model_args, data_args, training_args):
                 encoder_no_repeat_ngram_size=None,
                 encoder_input_ids=None,
                 bad_words_ids=None,
-                min_length=128,
+                min_length=750,
                 max_length=None,
                 eos_token_id=None,
                 forced_bos_token_id=None,
@@ -263,7 +251,7 @@ def run(model_args, data_args, training_args):
                 num_beam_groups=None,
                 diversity_penalty=None,
                 remove_invalid_values=None,
-                exponential_decay_length_penalty=(10, 1.7),
+                exponential_decay_length_penalty=(20, 1.7),
                 input_ids_seq_length=70,
                 logits_processor=LogitsProcessorList())
             for i, text in enumerate(generated_texts):
@@ -302,13 +290,13 @@ def run(model_args, data_args, training_args):
     if model_args.freeze_decoder:
         model = ClipCaptionPrefix(
             model_args.prefix_length, clip_length=model_args.prefix_length_clip,
-            prefix_size=model_args.prefix_dim, decoder_name_or_path=model_args.model_name_or_path)
+            prefix_size=model_args.prefix_dim, decoder_name_or_path="gpt2")
     else:
         model = ClipCaptionModel(
             model_args.prefix_length, clip_length=model_args.prefix_length_clip,
-            prefix_size=model_args.prefix_dim, decoder_name_or_path=model_args.model_name_or_path)
+            prefix_size=model_args.prefix_dim, decoder_name_or_path="gpt2")
     if os.path.isdir(training_args.output_dir) and training_args.do_eval:
-        model.load_state_dict(torch.load(os.path.join(training_args.output_dir, 'coco-099.pt')))
+        model.load_state_dict(torch.load(os.path.join(training_args.output_dir, "coco-099.pt")))
 
     # Initialize training
     predict(preprocessed_datasets, model, model_args, training_args)
