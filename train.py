@@ -125,7 +125,7 @@ def run(model_args, data_args, training_args):
         )
         
         # save_config(model_args)
-        for epoch in range(int(training_args.num_train_epochs)):
+        for epoch in range(1, int(training_args.num_train_epochs) + 1):
             print(f">>> Training epoch {epoch}")
             sys.stdout.flush()
             progress = tqdm(total=len(train_dataloader), desc=output_prefix)
